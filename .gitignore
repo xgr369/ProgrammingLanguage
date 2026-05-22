@@ -1,0 +1,21 @@
+# Build outputs
+Debug/
+Release/
+x64/
+x86/
+
+# Intermediate files
+*.obj
+*.pdb
+*.ilk
+*.log
+
+# Visual Studio cache
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Test
+ProgrammingLanguage/test.c
