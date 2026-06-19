@@ -66,3 +66,13 @@ int charvector_pusharray(CharVector *pcv, const char *src, size_t len) {
 	pcv->length += len;
 	return 0;
 }
+
+int charvector_setarray(CharVector *pcv, size_t index, const char *src, size_t len) {
+	if (!pcv || !src)
+		return 1;
+	if (index + len > pcv->size)
+		if (_charvector_resize(pcv, len))
+			return 1;
+	memcpy(pcv->data + index, src, len);
+	return 0;
+}

@@ -1,9 +1,9 @@
-#include <stdlib.h>
-#include "vector.h"
-#include "charvector.h"
-
 #ifndef JAGGEDVECTOR_H
 #define JAGGEDVECTOR_H
+
+#include <stdlib.h>
+#include "charvector.h"
+#include "vector.h"
 
 #define BASIC_JAGGEDVECTOR_DATA_SIZE 1
 #define BASIC_JAGGEDVECTOR_TABLE_SIZE 1
