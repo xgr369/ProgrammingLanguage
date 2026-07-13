@@ -19,3 +19,5 @@ x86/
 
 # Test
 ProgrammingLanguage/test.c
+ProgrammingLanguage/explanation.txt
+/ProgrammingLanguage/test.lang
