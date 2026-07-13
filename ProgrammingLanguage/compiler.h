@@ -13,6 +13,10 @@
 typedef struct {
 	StringHashTable identifierTable;
 	size_t stackSize;
+} LangC_ScopeContext;
+
+typedef struct {
+	Vector scopeContexts; // Vector<LangC_ScopeContext>
 	char *msg;
 } LangC_CompilerState;
 
@@ -33,6 +37,9 @@ static inline langC_writeinteger(CharVector *pbc, int index, int i) {
 static inline langC_emitlstring(CharVector *pbc, const char *src, int l) {
 	charvector_pusharray(pbc, &l, sizeof(int));
 	charvector_pusharray(pbc, src, l);
+}
+static inline langC_emitptr(CharVector *pbc, size_t ptr) {
+	charvector_pusharray(pbc, &ptr, sizeof(size_t));
 }
 #define langC_errmsg(pc, _msg) (pc->msg = _msg)
 

@@ -12,9 +12,17 @@
 #define LANG_STACK_BASE_SIZE 8
 
 typedef struct {
+	int stackFrame;
+	size_t pc;
+	int nReturnExpected;
+} LangCallInfo;
+
+typedef struct {
 	Vector stack; // Vector<LangTValue>
 	StringHashTable externValueTable; // Vector<LangTValue>
 	const char *msg;
+	LangCallInfo callInfo;
+	Vector prevCallInfos; // Vector<LangCallInfo>
 } LangState;
 
 #define LANG_TYPE_NIL		0
@@ -23,7 +31,7 @@ typedef struct {
 #define LANG_TYPE_FUNCTION	3
 
 typedef double lang_number;
-typedef int (*lang_cfunction) (LangState *ps);
+//typedef int (*lang_cfunction) (LangState *ps);
 
 typedef struct {
 	size_t length;
@@ -33,7 +41,7 @@ typedef struct {
 typedef union {
 	void *ptr;
 	lang_number number;
-	lang_cfunction cfunction;
+	//lang_cfunction cfunction;
 } LangValue;
 
 typedef struct {
@@ -57,22 +65,26 @@ void		lang_binaryop		(LangState *ps, char op);						// [-2, +1]
 
 #define lang_pushliteral(ps, l) (lang_pushlstring(ps, "" l, sizeof(l)))			// [-0, +1]
 
-void		lang_call			(LangState *ps, int nArg, int nReturn);
 void		lang_copy			(LangState *ps, int indexFrom, int indexTo);	// [-0, +0]
+void		lang_endcall		(LangState *ps, int nReturn);					// [-..., +0] internal
 void		lang_loadexternvalue(LangState *ps, const char *name);				// [-0, +1]
 void		lang_pop			(LangState *ps);								// [-1, +0]
 void		lang_popn			(LangState *ps, int n);							// [-n, +0]
+void		lang_precall		(LangState *ps, int nArg, int nReturn);			// [-0, +0] internal
 void		lang_pushnil		(LangState *ps);								// [-0, +1]
 void		lang_pushnumber		(LangState *ps, lang_number value);				// [-0, +1]
+void		lang_pushlfunc		(LangState *ps, const void *src);				// [-0, +1]
 void		lang_pushlstring	(LangState *ps, const char *str, int len);		// [-0, +1]
 void		lang_pushvalue		(LangState *ps, int index);						// [-0, +1]
 void		lang_removen		(LangState *ps, int index, int n);				// [-n, +0]
 void		lang_replace		(LangState *ps, int index);						// [-1, +0]
-void		lang_storeexternvalue(LangState *ps, const char *name, lang_cfunction func);	// [-0, +0]
 
-int			lang_isnonzero		(LangState *ps);								// [-0, +0]
+int			lang_iszero			(LangState *ps);								// [-0, +0]
 lang_number lang_tonumber		(LangState *ps, int index);						// [-0, +0]
+
+//void		lang_storeexternvalue(LangState *ps, const char *name, lang_cfunction func);	// [-0, +0]
 //lang_byte	lang_checkbyte		(LangState *ps, int index);						// [-0, +0]
 //const lang_byte *lang_checklstring	(LangState *ps, int index, size_t *dstLen);		// [-0, +0]
+
 
 #endif // LANG_H

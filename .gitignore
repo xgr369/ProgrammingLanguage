@@ -18,6 +18,7 @@ x86/
 *.vcxproj.user
 
 # Test
-ProgrammingLanguage/test.c
-ProgrammingLanguage/explanation.txt
+/ProgrammingLanguage/test.c
+/ProgrammingLanguage/explanation.txt
 /ProgrammingLanguage/test.lang
+

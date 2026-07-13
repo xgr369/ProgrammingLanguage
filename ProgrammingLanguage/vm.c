@@ -4,7 +4,8 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 	size_t pc = 0;
 	while (pc < len) {
 		//printf("pc=%ld, op=%ld\n", pc, pbc[pc]);
-		switch (pbc[pc]) {
+		LangV_Operation _op = pbc[pc];
+		switch (_op) {
 			case LANGV_OP_BINARYOP:
 			{
 				pc++;
@@ -27,7 +28,9 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&nReturn, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_call(ps, nArg, nReturn);
+				ps->callInfo.pc = pc;
+				lang_precall(ps, nArg, nReturn);
+				pc = ps->callInfo.pc;
 				break;
 			}
 			case LANGV_OP_COPY:
@@ -45,11 +48,28 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				lang_copy(ps, idxFrom, idxTo);
 				break;
 			}
-			case LANGV_OP_JMPNZ:
+			case LANGV_OP_END:
+			{
+				lang_endcall(ps, 0);
+				pc = ps->callInfo.pc;
+				break;
+			}
+			case LANGV_OP_JMP:
 			{
 				pc++;
 
-				int flag = lang_isnonzero(ps);
+				int steps;
+				memcpy(&steps, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				pc += steps;
+				break;
+			}
+			case LANGV_OP_JMPZ:
+			{
+				pc++;
+
+				int flag = lang_iszero(ps);
 				lang_pop(ps);
 				if (flag) {
 					int steps;
@@ -93,6 +113,16 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				lang_popn(ps, n);
 				break;
 			}
+			case LANGV_OP_PUSHLFUNC:
+			{
+				pc++;
+
+				int pos;
+				memcpy(&pos, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				lang_pushlfunc(ps, pos);
+			} break;
 			case LANGV_OP_PUSHLSTRING:
 			{
 				pc++;
@@ -145,6 +175,18 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				pc += sizeof(int);
 
 				lang_replace(ps, idx);
+				break;
+			}
+			case LANGV_OP_RETURN:
+			{
+				pc++;
+
+				int nReturn;
+				memcpy(&nReturn, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				lang_endcall(ps, nReturn);
+				pc = ps->callInfo.pc;
 				break;
 			}
 			default:
@@ -204,9 +246,26 @@ int langV_dbg(const char *pbc, int len) {
 				pc += sizeof(int);
 				break;
 			}
-			case LANGV_OP_JMPNZ:
+			case LANGV_OP_END:
 			{
-				printf("jmpnz\t");
+				printf("end\t");
+				pc++;
+				break;
+			}
+			case LANGV_OP_JMP:
+			{
+				printf("jmp\t");
+				pc++;
+
+				int steps;
+				memcpy(&steps, pbc + pc, sizeof(int));
+				printf("int %d ", steps);
+				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_JMPZ:
+			{
+				printf("jmpz\t");
 				pc++;
 
 				int steps;
@@ -238,6 +297,17 @@ int langV_dbg(const char *pbc, int len) {
 				int n;
 				memcpy(&n, pbc + pc, sizeof(int));
 				printf("int %d ", n);
+				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_PUSHLFUNC:
+			{
+				printf("pushlfunc\t");
+				pc++;
+
+				int pos;
+				memcpy(&pos, pbc + pc, sizeof(int));
+				printf("int %d", pos);
 				pc += sizeof(int);
 				break;
 			}
@@ -292,6 +362,17 @@ int langV_dbg(const char *pbc, int len) {
 				int idx;
 				memcpy(&idx, pbc + pc, sizeof(int));
 				printf("int %d ", idx);
+				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_RETURN:
+			{
+				printf("return\t");
+				pc++;
+
+				int nReturn;
+				memcpy(&nReturn, pbc + pc, sizeof(int));
+				printf("int %d ", nReturn);
 				pc += sizeof(int);
 				break;
 			}

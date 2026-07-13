@@ -3,6 +3,7 @@
 #define langP_errmsg(pps, _msg) (pps->msg = _msg)
 
 LangP_AstNode *parse_block(LangP_ParserState *pps);
+LangP_AstNode *parse_expr(LangP_ParserState *pps);
 
 inline LangP_Token *peek_token(LangP_ParserState *pps) {
 	if (pps->pos >= pps->ptokens->length) {
@@ -53,29 +54,110 @@ inline LangP_AstOperation get_op(LangP_TokenTag tag) {
 	return LANGP_AST_OP_UNKNOWN;
 }
 
-LangP_AstNode *parse_leaf(LangP_ParserState *pps) {
+LangP_AstNode *parse_primary(LangP_ParserState *pps) {
 	LangP_Token *ptok = peek_token(pps);
 	if (!ptok) {
 		return NULL;
 	}
-	if (ptok->type != LANGP_TOK_IDENTIFIER && ptok->type != LANGP_TOK_NUMBER) {
-		langP_errmsg(pps, "expected identifier or number");
-		return NULL;
-	}
 	consume_token(pps);
+	if (ptok->type == LANGP_TOK_KEYWORD && ptok->value.tag == LANGP_TOK_KEYWORD_FUNCTION) {
+		// function definition
+		ptok = peek_token(pps);
+		if (!ptok) {
+			return NULL;
+		}
+		if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_PARLEFT) {
+			langP_errmsg(pps, "expected '('");
+			return NULL;
+		}
+		consume_token(pps);
 
-	LangP_AstNode *pleaf = malloc(sizeof(LangP_AstNode));
-	if (!pleaf) {
-		langP_errmsg(pps, "failed to allocate");
-		return NULL;
+		LangP_AstNode *pvarlist = malloc(sizeof(LangP_AstNode));
+		if (!pvarlist) {
+			langP_errmsg(pps, "failed to allocate");
+			return NULL;
+		}
+		pvarlist->type = LANGP_AST_NODE_VARLIST;
+		vector_new(&pvarlist->value.nodes, sizeof(LangP_AstNode *), 2);
+
+		ptok = peek_token(pps);
+		if (!ptok) {
+			return NULL;
+		}
+		if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_PARRIGHT) {
+			for (;;) {
+				LangP_AstNode *pexpr = parse_expr(pps);
+				if (!pexpr) {
+					return NULL;
+				}
+				if (pexpr->type != LANGP_AST_NODE_LEAF) {
+					langP_errmsg(pps, "expected var");
+					return NULL;
+				}
+				vector_push(&pvarlist->value.nodes, &pexpr);
+				LangP_Token *ptok = peek_token(pps);
+				if (!ptok) {
+					return NULL;
+				}
+				if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_COMMA) {
+					break;
+				}
+				consume_token(pps);
+			}
+		}
+		ptok = peek_token(pps);
+		if (!ptok) {
+			return NULL;
+		}
+		if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_PARRIGHT) {
+			langP_errmsg(pps, "expected ')'");
+			return NULL;
+		}
+		consume_token(pps);
+
+		LangP_AstNode *pblock = parse_block(pps);
+		if (!pblock) {
+			return NULL;
+		}
+		
+		ptok = peek_token(pps);
+		if (!ptok) {
+			return NULL;
+		}
+		if (ptok->type != LANGP_TOK_KEYWORD || ptok->value.tag != LANGP_TOK_KEYWORD_END) {
+			langP_errmsg(pps, "expected 'end'");
+			return NULL;
+		}
+		consume_token(pps);
+
+		LangP_AstNode *pcontrol = malloc(sizeof(LangP_AstNode));
+		if (!pcontrol) {
+			langP_errmsg(pps, "failed to allocate");
+			return NULL;
+		}
+		pcontrol->type = LANGP_AST_NODE_CONTROL_FUNCTION;
+		pcontrol->value.controlFunction.pvarlist = pvarlist;
+		pcontrol->value.controlFunction.pblock = pblock;
+		return pcontrol;
 	}
-	pleaf->type = LANGP_AST_NODE_LEAF;
-	pleaf->value.ptoken = ptok;
-	return pleaf;
+	if (ptok->type == LANGP_TOK_IDENTIFIER || ptok->type == LANGP_TOK_NUMBER) {
+		// identifier or number
+		LangP_AstNode *pleaf = malloc(sizeof(LangP_AstNode));
+		if (!pleaf) {
+			langP_errmsg(pps, "failed to allocate");
+			return NULL;
+		}
+		pleaf->type = LANGP_AST_NODE_LEAF;
+		pleaf->value.ptoken = ptok;
+		return pleaf;
+	}
+
+	langP_errmsg(pps, "expected identifier, number, or function definition");
+	return NULL;
 }
 
-LangP_AstNode *parse_expr(LangP_ParserState *pps) {
-	LangP_AstNode *pexpr = parse_leaf(pps);
+/*LangP_AstNode *parse_expr(LangP_ParserState *pps) {
+	LangP_AstNode *pexpr = parse_primary(pps);
 	if (!pexpr) {
 		return NULL;
 	}
@@ -166,9 +248,254 @@ LangP_AstNode *parse_expr(LangP_ParserState *pps) {
 	pcall->value.call.pexpr = pexpr;
 	pcall->value.call.pexprlist = pexprlist;
 	return pcall;
+}*/
+
+LangP_AstNode *parse_expr(LangP_ParserState *pps) {
+	LangP_AstNode *pexpr = parse_primary(pps);
+	if (!pexpr) {
+		return NULL;
+	}
+	for (;;) {
+		LangP_Token *ptok = peek_token(pps);
+		if (!ptok) {
+			return NULL;
+		}
+		if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag == LANGP_TOK_OPERATOR_COMMA || ptok->value.tag == LANGP_TOK_OPERATOR_PARRIGHT || ptok->value.tag == LANGP_TOK_OPERATOR_ASSIGN) {
+			break;
+		}
+		consume_token(pps);
+		if (ptok->value.tag == LANGP_TOK_OPERATOR_PARLEFT) {
+			// call
+			LangP_AstNode *pexprlist = malloc(sizeof(LangP_AstNode));
+			if (!pexprlist) {
+				langP_errmsg(pps, "failed to allocate");
+				return NULL;
+			}
+			pexprlist->type = LANGP_AST_NODE_EXPRLIST;
+			vector_new(&pexprlist->value.nodes, sizeof(LangP_AstNode *), 2);
+			ptok = peek_token(pps);
+			if (!ptok) {
+				return NULL;
+			}
+			if (ptok->type == LANGP_TOK_OPERATOR && ptok->value.tag == LANGP_TOK_OPERATOR_PARRIGHT) {
+				consume_token(pps);
+			} else {
+				for (;;) {
+					LangP_AstNode *pexpr = parse_expr(pps);
+					if (!pexpr) {
+						return NULL;
+					}
+					vector_push(&pexprlist->value.nodes, &pexpr);
+					ptok = peek_token(pps);
+					if (!ptok) {
+						return NULL;
+					}
+					if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_COMMA) {
+						break;
+					}
+					consume_token(pps);
+				}
+				ptok = peek_token(pps);
+				if (!ptok) {
+					return NULL;
+				}
+				if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_PARRIGHT) {
+					langP_errmsg(pps, "expected ')'");
+					return NULL;
+				}
+				consume_token(pps);
+			}
+			LangP_AstNode *pexprNew = malloc(sizeof(LangP_AstNode));
+			if (!pexprNew) {
+				langP_errmsg(pps, "failed to allocate");
+				return NULL;
+			}
+			pexprNew->type = LANGP_AST_NODE_CALL;
+			pexprNew->value.call.pexpr = pexpr;
+			pexprNew->value.call.pexprlist = pexprlist;
+			pexpr = pexprNew;
+		} else {
+			// binary expression
+			LangP_AstNode *pright = parse_expr(pps);
+			if (!pright) {
+				return NULL;
+			}
+			LangP_AstNode *pexprNew = malloc(sizeof(LangP_AstNode));
+			if (!pexprNew) {
+				langP_errmsg(pps, "failed to allocate");
+				return NULL;
+			}
+			pexprNew->type = LANGP_AST_NODE_BINARYEXPR;
+			pexprNew->value.binaryExpression.pleft = pexpr;
+			pexprNew->value.binaryExpression.pright = pright;
+			LangP_AstOperation op = get_op(ptok->value.tag);
+			if (op == LANGP_AST_OP_UNKNOWN) {
+				langP_errmsg(pps, "unknown operation");
+				return NULL;
+			}
+			pexprNew->value.binaryExpression.op = op;
+			pexpr = pexprNew;
+		}
+	}
+	return pexpr;
 }
 
-LangP_AstNode *parse_statement_simple(LangP_ParserState *pps) {
+LangP_AstNode *parse_control_ifelseif(LangP_ParserState *pps);
+
+LangP_AstNode *parse_control_ifelseif(LangP_ParserState *pps) {
+	LangP_Token *ptok = peek_token(pps);
+	if (ptok->type != LANGP_TOK_KEYWORD || (ptok->value.tag != LANGP_TOK_KEYWORD_IF && ptok->value.tag != LANGP_TOK_KEYWORD_ELSEIF)) {
+		langP_errmsg(pps, "expected 'if' or 'elseif'");
+		return NULL;
+	}
+	consume_token(pps);
+	LangP_AstNode *pexpr = parse_expr(pps);
+	if (!pexpr) {
+		return NULL;
+	}
+	ptok = peek_token(pps);
+	if (ptok->type != LANGP_TOK_KEYWORD || ptok->value.tag != LANGP_TOK_KEYWORD_THEN) {
+		langP_errmsg(pps, "expected 'then'");
+		return NULL;
+	}
+	consume_token(pps);
+
+	LangP_AstNode *pblock = parse_block(pps);
+	if (!pblock) {
+		return NULL;
+	}
+
+	ptok = peek_token(pps);
+	if (!ptok) {
+		return NULL;
+	}
+	if (ptok->type != LANGP_TOK_KEYWORD) {
+		langP_errmsg(pps, "expected 'else', 'elseif', or 'end'");
+		return NULL;
+	}
+	LangP_AstNode *pnext;
+	if (ptok->value.tag == LANGP_TOK_KEYWORD_ELSE) {
+		pnext = NULL;
+		//TODOpnext = parse_control_else(pps);
+	} else if (ptok->value.tag == LANGP_TOK_KEYWORD_ELSEIF) {
+		pnext = parse_control_ifelseif(pps);
+		if (!pnext) {
+			return NULL;
+		}
+	} else if (ptok->value.tag == LANGP_TOK_KEYWORD_END) {
+		consume_token(pps);
+		pnext = NULL;
+	} else {
+		langP_errmsg(pps, "expected 'else', 'elseif', or 'end'");
+		return NULL;
+	}
+
+	LangP_AstNode *pcontrol = malloc(sizeof(LangP_AstNode));
+	if (!pcontrol) {
+		langP_errmsg(pps, "failed to allocate");
+		return NULL;
+	}
+	pcontrol->type = LANGP_AST_NODE_CONTROL_IFELSEIF;
+	pcontrol->value.controlIfElseif.pexpr = pexpr;
+	pcontrol->value.controlIfElseif.pblock = pblock;
+	pcontrol->value.controlIfElseif.pnext = pnext;
+	return pcontrol;
+}
+
+LangP_AstNode *parse_statement(LangP_ParserState *pps) {
+	// Parse keyword-based statement
+	LangP_Token *ptok = peek_token(pps);
+	if (!ptok) {
+		return NULL;
+	}
+	if (ptok->type == LANGP_TOK_KEYWORD) {
+		switch (ptok->value.tag) {
+			case LANGP_TOK_KEYWORD_EXTERN:
+			{
+				consume_token(pps);
+				LangP_AstNode *pvarlist = malloc(sizeof(LangP_AstNode));
+				if (!pvarlist) {
+					langP_errmsg(pps, "failed to allocate");
+					return NULL;
+				}
+				pvarlist->type = LANGP_AST_NODE_VARLIST;
+				vector_new(&pvarlist->value.nodes, sizeof(LangP_AstNode *), 2);
+				for (;;) {
+					LangP_AstNode *pexpr = parse_expr(pps);
+					if (!pexpr) {
+						return NULL;
+					}
+					if (pexpr->type != LANGP_AST_NODE_LEAF) {
+						langP_errmsg(pps, "expected var");
+						return NULL;
+					}
+					vector_push(&pvarlist->value.nodes, &pexpr);
+					LangP_Token *ptok = peek_token(pps);
+					if (!ptok) {
+						return NULL;
+					}
+					if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_COMMA) {
+						break;
+					}
+					consume_token(pps);
+				}
+
+				LangP_AstNode *pcontrol = malloc(sizeof(LangP_AstNode));
+				if (!pcontrol) {
+					langP_errmsg(pps, "failed to allocate");
+					return NULL;
+				}
+				pcontrol->type = LANGP_AST_NODE_CONTROL_EXTERN;
+				pcontrol->value.pnode = pvarlist;
+				return pcontrol;
+			}
+			case LANGP_TOK_KEYWORD_IF:
+			{
+				LangP_AstNode *pcontrol = parse_control_ifelseif(pps);
+				if (!pcontrol) {
+					return NULL;
+				}
+				return pcontrol;
+			}
+			case LANGP_TOK_KEYWORD_RETURN:
+			{
+				consume_token(pps);
+				LangP_AstNode *pexprlist = malloc(sizeof(LangP_AstNode));
+				if (!pexprlist) {
+					langP_errmsg(pps, "failed to allocate");
+					return NULL;
+				}
+				pexprlist->type = LANGP_AST_NODE_EXPRLIST;
+				vector_new(&pexprlist->value.nodes, sizeof(LangP_AstNode *), 2);
+				for (;;) {
+					LangP_AstNode *pexpr = parse_expr(pps);
+					if (!pexpr) {
+						return NULL;
+					}
+					vector_push(&pexprlist->value.nodes, &pexpr);
+					LangP_Token *ptok = peek_token(pps);
+					if (!ptok) {
+						return NULL;
+					}
+					if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_COMMA) {
+						break;
+					}
+					consume_token(pps);
+				}
+
+				LangP_AstNode *pcontrol = malloc(sizeof(LangP_AstNode));
+				if (!pcontrol) {
+					langP_errmsg(pps, "failed to allocate");
+					return NULL;
+				}
+				pcontrol->type = LANGP_AST_NODE_CONTROL_RETURN;
+				pcontrol->value.pnode = pexprlist;
+				return pcontrol;
+			}
+		}
+	}
+
+	// Parse assignment or call
 	LangP_AstNode *pexpr = parse_expr(pps);
 	if (!pexpr) {
 		return NULL;
@@ -251,82 +578,7 @@ LangP_AstNode *parse_statement_simple(LangP_ParserState *pps) {
 		return passignment;
 	}
 
-	langP_errmsg(pps, "WIP");
-	return NULL;
-}
-
-LangP_AstNode *parse_control(LangP_ParserState *pps) {
-	LangP_Token *ptok = peek_token(pps);
-	if (!ptok) {
-		return NULL;
-	}
-	consume_token(pps);
-	switch (ptok->value.tag) {
-		case LANGP_TOK_KEYWORD_EXTERN:
-		{
-			LangP_AstNode *pvarlist = malloc(sizeof(LangP_AstNode));
-			if (!pvarlist) {
-				langP_errmsg(pps, "failed to allocate");
-				return NULL;
-			}
-			pvarlist->type = LANGP_AST_NODE_VARLIST;
-			vector_new(&pvarlist->value.nodes, sizeof(LangP_AstNode *), 2);
-			for (;;) {
-				LangP_AstNode *pexpr = parse_expr(pps);
-				if (!pexpr) {
-					return NULL;
-				}
-				if (pexpr->type != LANGP_AST_NODE_LEAF) {
-					langP_errmsg(pps, "expected var");
-					return NULL;
-				}
-				vector_push(&pvarlist->value.nodes, &pexpr);
-				LangP_Token *ptok = peek_token(pps);
-				if (!ptok) {
-					return NULL;
-				}
-				if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_COMMA) {
-					break;
-				}
-				consume_token(pps);
-			}
-			LangP_AstNode *pcontrol = malloc(sizeof(LangP_AstNode));
-			if (!pcontrol) {
-				langP_errmsg(pps, "failed to allocate");
-				return NULL;
-			}
-			pcontrol->type = LANGP_AST_NODE_CONTROL_EXTERN;
-			pcontrol->value.pnode = pvarlist;
-			return pcontrol;
-		}
-		case LANGP_TOK_KEYWORD_IF:
-		{
-			LangP_AstNode *pexpr = parse_expr(pps);
-			if (!pexpr) {
-				return NULL;
-			}
-			ptok = peek_token(pps);
-			if (ptok->type != LANGP_TOK_KEYWORD || ptok->value.tag != LANGP_TOK_KEYWORD_THEN) {
-				langP_errmsg(pps, "'then' expected");
-				return NULL;
-			}
-			consume_token(pps);
-			LangP_AstNode *pblock = parse_block(pps);
-			if (!pblock) {
-				return NULL;
-			}
-			LangP_AstNode *pcontrol = malloc(sizeof(LangP_AstNode));
-			if (!pcontrol) {
-				langP_errmsg(pps, "failed to allocate");
-				return NULL;
-			}
-			pcontrol->type = LANGP_AST_NODE_CONTROL_IF;
-			pcontrol->value.controlIf.pexpr = pexpr;
-			pcontrol->value.controlIf.pblock = pblock;
-			return pcontrol;
-		}
-	}
-	langP_errmsg(pps, "unrecognized control node");
+	langP_errmsg(pps, "invalid statement");
 	return NULL;
 }
 
@@ -347,21 +599,13 @@ LangP_AstNode *parse_block(LangP_ParserState *pps) {
 			langP_errmsg(pps, "unexpected EOF");
 			return NULL;
 		}
-		if (ptok->type == LANGP_TOK_KEYWORD && ptok->value.tag == LANGP_TOK_KEYWORD_END) {
-			consume_token(pps);
+		if (ptok->type == LANGP_TOK_KEYWORD && (ptok->value.tag == LANGP_TOK_KEYWORD_END || ptok->value.tag == LANGP_TOK_KEYWORD_ELSE || ptok->value.tag == LANGP_TOK_KEYWORD_ELSEIF)) {
 			break;
 		}
 		LangP_AstNode *pstatement;
-		if (ptok->type == LANGP_TOK_KEYWORD) {
-			pstatement = parse_control(pps);
-			if (!pstatement) {
-				return NULL;
-			}
-		} else {
-			pstatement = parse_statement_simple(pps);
-			if (!pstatement) {
-				return NULL;
-			}
+		pstatement = parse_statement(pps);
+		if (!pstatement) {
+			return NULL;
 		}
 		vector_push(&pblock->value.nodes, &pstatement);
 	}
@@ -385,16 +629,9 @@ LangP_AstNode *parse_program(LangP_ParserState *pps) {
 			break;
 		}
 		LangP_AstNode *pstatement;
-		if (ptok->type == LANGP_TOK_KEYWORD) {
-			pstatement = parse_control(pps);
-			if (!pstatement) {
-				return NULL;
-			}
-		} else {
-			pstatement = parse_statement_simple(pps);
-			if (!pstatement) {
-				return NULL;
-			}
+		pstatement = parse_statement(pps);
+		if (!pstatement) {
+			return NULL;
 		}
 		vector_push(&pblock->value.nodes, &pstatement);
 	}

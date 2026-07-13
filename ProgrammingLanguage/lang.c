@@ -17,6 +17,10 @@ int lang_init_state(LangState *ps) {
 		return 1;
 	}
 	ps->msg = NULL;
+	ps->callInfo.stackFrame = 0;
+	if (vector_new(&ps->prevCallInfos, sizeof(LangCallInfo), 1)) {
+		return 1;
+	}
 	return 0;
 }
 
@@ -26,7 +30,7 @@ void lang_binaryop(LangState *ps, char op) {
 	lang_gettvalue(ps, -1, &b);
 	lang_gettvalue(ps, -2, &a);
 	lang_popn(ps, 2);
-	if (a.type == LANG_TYPE_NUMBER || b.type == LANG_TYPE_NUMBER) {
+	if (a.type == LANG_TYPE_NUMBER && b.type == LANG_TYPE_NUMBER) {
 		switch (op) {
 			case LANG_OP_ADD:
 				lang_pushnumber(ps, a.value.number + b.value.number);
@@ -57,7 +61,7 @@ void lang_binaryop(LangState *ps, char op) {
 				lang_errmsg(ps, "unrecognized binary operation on type number");
 				return;
 		}
-	} else if (a.type == LANG_TYPE_STRING || b.type == LANG_TYPE_STRING) {
+	} else if (a.type == LANG_TYPE_STRING && b.type == LANG_TYPE_STRING) {
 		switch (op) {
 			case LANG_OP_EQ:
 			{
@@ -70,23 +74,10 @@ void lang_binaryop(LangState *ps, char op) {
 				lang_errmsg(ps, "unrecognized binary operation on type string");
 				return;
 		}
-	}
-}
-
-void lang_call(LangState *ps, int nArg, int nReturn) {
-	// wip
-	// calls a function, with func, ...args [nArg] atop stack.
-	// erases those values, leaving only ...returns [nReturn] atop.
-	LangTValue ltv;
-	lang_gettvalue(ps, -nArg - 1, &ltv);
-	int stackCallSectionBottom = ps->stack.length - nArg - 1;
-	if (ltv.type != LANG_TYPE_FUNCTION) {
-		lang_errmsg(ps, "calling a non-function");
+	} else {
+		lang_errmsg(ps, "binary operation on unrecognized type(s)");
 		return;
 	}
-	int nReturnActual = ltv.value.cfunction(ps); // todo handle nReturnActual != nReturn
-	int nRemove = ps->stack.length - nReturn - stackCallSectionBottom;
-	lang_removen(ps, stackCallSectionBottom, nRemove);
 }
 
 void lang_copy(LangState *ps, int indexFrom, int indexTo) {
@@ -95,10 +86,22 @@ void lang_copy(LangState *ps, int indexFrom, int indexTo) {
 	vector_set(&ps->stack, indexTo, &ltv);
 }
 
+void lang_endcall(LangState *ps, int nReturn) {
+	if (nReturn < ps->callInfo.nReturnExpected) {
+		for (int i = nReturn; i < nReturn; i++) {
+			lang_pushnil(ps);
+		}
+	} else if (nReturn > ps->callInfo.nReturnExpected) {
+		vector_popn(&ps->stack, nReturn - ps->callInfo.nReturnExpected);
+	}
+	int nRemove = ps->stack.length - ps->callInfo.nReturnExpected - (ps->callInfo.stackFrame - 1);
+	vector_removen(&ps->stack, ps->callInfo.stackFrame - 1, nRemove);
+	vector_pop(&ps->prevCallInfos, &ps->callInfo);
+}
+
 void lang_loadexternvalue(LangState *ps, const char *name) {
 	LangTValue ltv;
 	if (stringhashtable_get(&ps->externValueTable, name, &ltv)) {
-		printf(name);
 		lang_errmsg(ps, "extern value not found");
 		return;
 	}
@@ -113,6 +116,19 @@ void lang_popn(LangState *ps, int n) {
 	vector_popn(&ps->stack, n);
 }
 
+void lang_precall(LangState *ps, int nArg, int nReturn) {
+	vector_push(&ps->prevCallInfos, &ps->callInfo);
+	LangTValue ltv;
+	lang_gettvalue(ps, -nArg - 1, &ltv);
+	if (ltv.type != LANG_TYPE_FUNCTION) {
+		lang_errmsg(ps, "calling a non-function");
+		return;
+	}
+	ps->callInfo.pc = ltv.value.ptr;
+	ps->callInfo.stackFrame = ps->stack.length - nArg;
+	ps->callInfo.nReturnExpected = nReturn;
+}
+
 void lang_pushnil(LangState *ps) {
 	LangTValue ltv;
 	ltv.type = LANG_TYPE_NIL;
@@ -123,6 +139,13 @@ void lang_pushnumber(LangState *ps, lang_number value) {
 	LangTValue ltv;
 	ltv.type = LANG_TYPE_NUMBER;
 	ltv.value.number = value;
+	vector_push(&ps->stack, &ltv);
+}
+
+void lang_pushlfunc(LangState *ps, const void *src) {
+	LangTValue ltv;
+	ltv.type = LANG_TYPE_FUNCTION;
+	ltv.value.ptr = src;
 	vector_push(&ps->stack, &ltv);
 }
 
@@ -142,34 +165,28 @@ void lang_pushlstring(LangState *ps, const char *str, int len) {
 
 void lang_pushvalue(LangState *ps, int index) {
 	LangTValue ltv;
-	lang_gettvalue(ps, index, &ltv);
+	lang_gettvalue(ps, ps->callInfo.stackFrame + index, &ltv);
 	vector_push(&ps->stack, &ltv);
 }
 
 void lang_removen(LangState *ps, int index, int n) {
-	vector_removen(&ps->stack, index, n);
+	vector_removen(&ps->stack, ps->callInfo.stackFrame + index, n);
 }
 
 void lang_replace(LangState *ps, int index) {
 	LangTValue ltv;
 	lang_gettvalue(ps, -1, &ltv);
-	vector_set(&ps->stack, index, &ltv);
+	vector_set(&ps->stack, ps->callInfo.stackFrame + index, &ltv);
 	lang_pop(ps);
 }
 
-void lang_storeexternvalue(LangState *ps, const char *str, lang_cfunction func) {
-	LangTValue ltv;
-	ltv.type = LANG_TYPE_FUNCTION;
-	ltv.value.cfunction = func;
-	stringhashtable_put(&ps->externValueTable, str, &ltv);
-}
-
-int lang_isnonzero(LangState *ps) {
+int lang_iszero(LangState *ps) {
 	LangTValue *pltv = &ps->stack.data[sizeof(LangTValue) * (ps->stack.length - 1)];
 	return pltv->type == LANG_TYPE_NIL || (pltv->type == LANG_TYPE_NUMBER && pltv->value.number == 0);
 }
 
-lang_number lang_tonumber(LangState *ps, int index) {
+
+lang_number lang_tonumber(LangState *ps) {
 	LangTValue *pltv = &ps->stack.data[sizeof(LangTValue) * (ps->stack.length - 1)];
 	if (pltv->type == LANG_TYPE_NUMBER) {
 		return pltv->value.number;
@@ -177,6 +194,16 @@ lang_number lang_tonumber(LangState *ps, int index) {
 	return 0;
 }
 
+
+
+/*void lang_storeexternvalue(LangState *ps, const char *str, lang_cfunction func) {
+	LangTValue ltv;
+	ltv.type = LANG_TYPE_FUNCTION;
+	ltv.value.cfunction = func;
+	stringhashtable_put(&ps->externValueTable, str, &ltv);
+}*/
+
+/*
 // REWRITE with lang_gettvalue
 const char *lang_checklstring(LangState *ps, int index, size_t *dstLen) {
 	LangTValue ltv;
@@ -190,4 +217,37 @@ const char *lang_checklstring(LangState *ps, int index, size_t *dstLen) {
 		*dstLen = pls->length;
 	}
 	return pls->data;
-}
+}*/
+
+
+/*#include "vm.h"
+void lang_call(LangState *ps, int nArg, int nReturn) {
+	// wip
+	// calls a function, with func, ...args [nArg] atop stack.
+	// erases those values, leaving only ...returns [nReturn] atop.
+	LangTValue ltv;
+	lang_gettvalue(ps, -nArg - 1, &ltv);
+	if (ltv.type != LANG_TYPE_FUNCTION) {
+		lang_errmsg(ps, "calling a non-function");
+		return;
+	}
+	char *ptr = ltv.value.ptr;
+	int callerStackFrame = ps->callInfo.stackFrame;
+	int calleeStackFrame = ps->stack.length - nArg;
+	ps->callInfo.stackFrame = calleeStackFrame;
+	langV_dbg(ptr, 100);
+	if (langV_exec(ps, ptr, 1000)) { // test
+		return;
+	}
+	ps->callInfo.stackFrame = callerStackFrame;
+	int nReturnActual = ps->numReturn;
+	if (nReturnActual < nReturn) {
+		for (int i = nReturnActual; i < nReturn; i++) {
+			lang_pushnil(ps);
+		}
+	} else if (nReturnActual > nReturn) {
+		vector_popn(&ps->stack, nReturnActual - nReturn);
+	}
+	int nRemove = ps->stack.length - nReturn - (calleeStackFrame - 1);
+	vector_removen(&ps->stack, calleeStackFrame - 1, nRemove);
+}*/

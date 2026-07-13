@@ -55,7 +55,13 @@ void read_identifier(LangP_LexerState *pls, LangP_Token *ptok) {
         ptok->value.string.length++;
         consume(pls);
     }
-    if (tok_equals(pls, ptok, "if")) {
+    if (tok_equals(pls, ptok, "else")) {
+        ptok->type = LANGP_TOK_KEYWORD;
+        ptok->value.tag = LANGP_TOK_KEYWORD_ELSE;
+    } else if (tok_equals(pls, ptok, "elseif")) {
+        ptok->type = LANGP_TOK_KEYWORD;
+        ptok->value.tag = LANGP_TOK_KEYWORD_ELSEIF;
+    } else if (tok_equals(pls, ptok, "if")) {
         ptok->type = LANGP_TOK_KEYWORD;
         ptok->value.tag = LANGP_TOK_KEYWORD_IF;
     } else if (tok_equals(pls, ptok, "then")) {
@@ -67,6 +73,12 @@ void read_identifier(LangP_LexerState *pls, LangP_Token *ptok) {
     } else if (tok_equals(pls, ptok, "extern")) {
         ptok->type = LANGP_TOK_KEYWORD;
         ptok->value.tag = LANGP_TOK_KEYWORD_EXTERN;
+    } else if (tok_equals(pls, ptok, "function")) {
+        ptok->type = LANGP_TOK_KEYWORD;
+        ptok->value.tag = LANGP_TOK_KEYWORD_FUNCTION;
+    } else if (tok_equals(pls, ptok, "return")) {
+        ptok->type = LANGP_TOK_KEYWORD;
+        ptok->value.tag = LANGP_TOK_KEYWORD_RETURN;
     } else {
         ptok->type = LANGP_TOK_IDENTIFIER;
     }

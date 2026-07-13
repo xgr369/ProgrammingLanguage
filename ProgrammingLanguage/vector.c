@@ -65,15 +65,16 @@ int vector_push(Vector *pv, const void *src) {
 }
 
 int vector_removen(Vector *pv, size_t index, size_t n) {
-	if (!pv || index < 0 || n < 0 || index + n >= pv->length)
+	if (!pv || index > pv->length || n > pv->length - index)
 		return 1;
-	memmove(pv->data + index * pv->elemSize, pv->data + (index + n) * pv->elemSize, n * pv->elemSize);
+	size_t tailSize = pv->length - index - n;
+	memmove(pv->data + index * pv->elemSize, pv->data + (index + n) * pv->elemSize, tailSize * pv->elemSize);
 	pv->length -= n;
 	return 0;
 }
 
 int vector_set(Vector *pv, size_t index, void *src) {
-	if (!pv || !src || index < 0 || index >= pv->length)
+	if (!pv || !src || index >= pv->length)
 		return 1;
 	memcpy(pv->data + index * pv->elemSize, src, pv->elemSize);
 	return 0;

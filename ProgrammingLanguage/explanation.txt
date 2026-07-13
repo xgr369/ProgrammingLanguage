@@ -252,3 +252,209 @@ ret2
 
 ret1
 ret2
+
+-----------------------------------------
+a,b,c=1,2,3
+RECORD a
+RECORD b
+RECORD c
+
+a=0
+a,b,c=1,2,3
+COPY [a]
+RECORD b
+RECORD c
+
+##################
+## FUNCTIONS    ##
+##################
+
+SOURCE
+function a() end
+function b() end
+a()
+
+BYTECODE
+// function a() // RECORD bytecode-pos func_a
+
+END
+
+PUSHLFUNC [func_a] // RECORD stack-pos a
+
+// function b() // RECORD bytecode-pos func_b
+
+END
+
+PUSHLFUNC [func_b] // RECORD stack-pos b
+
+pushvalue [a]
+call 0 0
+
+---------------------------------
+Handling of a pure function -- idea
+---------------------------------
+SOURCE
+f = function(a,b)
+	return a + b
+end
+x = f(2,3)
+
+BYTECODE
+jmp ...
+pushvalue 0
+pushvalue 1
+binaryop ADD // return value
+end
+pushlfunc ... // f
+pushvalue 0 // f
+pushnumber 2.0
+pushnumber 3.0
+call 2 0 // x
+
+---------------------------------
+Handling of a closure -- idea
+---------------------------------
+SOURCE
+x = 0
+f = function(a,b)
+	x=a+b
+end
+
+BYTECODE
+pushnumber 0 // x
+jmp ...
+pushvalue 0
+pushvalue 1
+binaryop ADD
+replaceup 1 0 // x -- "replaceup a b" means replace the b-th stack item of the a-th previous stack frame
+end
+pushlfunc ... // f
+// "replaceup a b" means replace the b-th stack item of the a-th previous stack frame
+// "pushupvalue a b" means push the b-th stack item of the a-th previous stack frame
+
+However, we currently get the following BYTECODE:
+0       pushnumber      double 0.000000
+9       jmp     int 10
+14      pushnil
+15      pushnil
+16      binaryop        char 0
+18      replace int 0
+23      end
+24      pushlfunc       int 14
+// This is because 1) we have not implemented local stack frames;
+// 2) we have not implemented "replaceup"; 3) we have not implemented closures
+
+------------------------------------
+BETTER IDEA
+------------------------------------
+SOURCE
+x = 0
+f = function(a,b)
+	x=a+b
+end
+
+AST
+=(x,0)
+=(f, FUNCTION(
+	VARLIST(a,b)
+	BLOCK(
+		=(x,+(a,b))
+	)
+))
+
+BYTECODE
+pushnumber 0 // x
+jmp ... // function f
+pushvalue 0
+pushvalue 1
+binaryop ADD
+replaceupvalue "x"
+end
+pushlclosure ... // f with upvalue "x"
+
+However, we currently get the following BYTECODE:
+pushnumber 0 // x
+jmp  ... // function f
+pushnil
+pushnil
+binaryop ADD
+replace 0
+end
+pushlfunc ... // f
+// This is because 1) we have not implemented local stack frames;
+// 2) we have not implemented "replaceupvalue"; 3) we have not implemented closures
+
+SOURCE
+x = 1
+g = nil
+f = function(a)
+	g = function()
+		x = a
+	end
+end
+f(1)
+g()
+
+BYTECODE
+pushnumber 0 // x
+pushnil // g
+jmp ... // function f
+jmp ... // function g
+pushupvalue "a"
+replaceup "x"
+end
+pushlclosure ... // with upvalues "x", "a"
+replaceupvalue "g" // g
+end
+pushlclosure ... // f with upvalues "g", "x", "a"
+pushvalue 2
+pushnumber 1
+call 1 0 // f(1)
+pushvalue 1
+call 0 0 // g()
+
+
+
+
+
+
+
+--------------
+Design for `return`
+--------------
+f = function(a,b)
+	return a + b
+end
+
+9       jmp     int 13
+14      pushvalue       int 0
+19      pushvalue       int 1
+24      binaryop        char 0
+		return 1 // return a + b
+26      end
+27      pushlfunc       int 14
+
+-----------------
+Design for if/elseif
+-----------------
+x=10
+if x<0 then
+x=2
+elseif x>0 then
+x=3
+end
+	pushnumber 10
+	pushvalue 0
+	pushnumber 0
+	binaryop LT
+,---jmpz ...
+|	pushnumber 2
+|	replace 0
+| ,-jmp ...
+`-|-pushvalue 0
+  |	pushnumber 0
+  |	binaryop GT
+  L-jmpz ...
+  |	pushnumber 3
+  |	replace 0
+  `-(rest of code)
