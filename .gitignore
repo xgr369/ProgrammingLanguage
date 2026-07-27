@@ -21,5 +21,6 @@ x86/
 /ProgrammingLanguage/test.c
 /ProgrammingLanguage/explanation.txt
 /ProgrammingLanguage/test.lang
-
 /ProgrammingLanguage/manual.ebnf
+/ProgrammingLanguage/ProgrammingLanguage.vcxproj
+/ProgrammingLanguage/ProgrammingLanguage.vcxproj.filters
