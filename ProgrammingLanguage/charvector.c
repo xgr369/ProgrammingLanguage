@@ -40,7 +40,7 @@ int charvector_get(CharVector *pcv, size_t index, char *dst) {
 int charvector_pop(CharVector *pcv, char *dst) {
 	if (!pcv || !dst || pcv->length == 0)
 		return 1;
-	memcpy(dst, pcv->data + pcv->length, 1);
+	memcpy(dst, pcv->data + pcv->length - 1, 1);
 	pcv->length--;
 	return 0;
 }

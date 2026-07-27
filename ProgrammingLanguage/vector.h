@@ -12,6 +12,7 @@ typedef struct {
 
 int vector_new(Vector *pv, size_t elemSize, size_t size);
 int vector_free(Vector *pv);
+void *vector_at(Vector *pv, size_t index);
 int vector_get(Vector *pv, size_t index, void *dst);
 int vector_pop(Vector *pv, void *dst);
 int vector_popn(Vector *pv, size_t n);

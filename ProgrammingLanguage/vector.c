@@ -30,6 +30,12 @@ int vector_free(Vector* pv) {
 	return 0;
 }
 
+void *vector_at(Vector *pv, size_t index) {
+	if (!pv || index < 0 || index >= pv->length)
+		return NULL;
+	return pv->data + pv->elemSize * index;
+}
+
 int vector_get(Vector* pv, size_t index, void *dst) {
 	if (!pv || !dst || index < 0 || index >= pv->length)
 		return 1;

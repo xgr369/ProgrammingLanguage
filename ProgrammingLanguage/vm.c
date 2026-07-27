@@ -29,7 +29,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				pc += sizeof(int);
 
 				ps->callInfo.pc = pc;
-				lang_precall(ps, nArg, nReturn);
+				lang_call(ps, nArg, nReturn);
 				pc = ps->callInfo.pc;
 				break;
 			}
@@ -50,8 +50,30 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 			}
 			case LANGV_OP_END:
 			{
-				lang_endcall(ps, 0);
+				lang_return(ps, 0);
 				pc = ps->callInfo.pc;
+				break;
+			}
+			case LANGV_OP_GETLOCAL:
+			{
+				pc++;
+
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				lang_getlocal(ps, idx);
+				break;
+			}
+			case LANGV_OP_GETUPVALUE:
+			{
+				pc++;
+
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				lang_getupvalue(ps, idx);
 				break;
 			}
 			case LANGV_OP_JMP:
@@ -81,7 +103,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				pc += sizeof(int);
 				break;
 			}
-			case LANGV_OP_LOADEXTERNVALUE:
+			case LANGV_OP_IMPORT:
 			{
 				pc++;
 
@@ -98,7 +120,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				name[len] = '\0';
 				pc += len;
 
-				lang_loadexternvalue(ps, name);
+				lang_import(ps, name);
 				free(name);
 				break;
 			}
@@ -113,15 +135,32 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				lang_popn(ps, n);
 				break;
 			}
+			case LANGV_OP_PUSHLCLOSURE:
+			{
+				pc++;
+
+				size_t src;
+				memcpy(&src, pbc + pc, sizeof(size_t));
+				pc += sizeof(size_t);
+
+				int nUpval;
+				memcpy(&nUpval, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				void *upvals = pbc + pc;
+				pc += nUpval * (sizeof(char) + sizeof(int));
+
+				lang_pushlclosure(ps, src, nUpval, upvals);
+			} break;
 			case LANGV_OP_PUSHLFUNC:
 			{
 				pc++;
 
-				int pos;
-				memcpy(&pos, pbc + pc, sizeof(int));
-				pc += sizeof(int);
+				size_t src;
+				memcpy(&src, pbc + pc, sizeof(size_t));
+				pc += sizeof(size_t);
 
-				lang_pushlfunc(ps, pos);
+				lang_pushlfunc(ps, src);
 			} break;
 			case LANGV_OP_PUSHLSTRING:
 			{
@@ -131,10 +170,10 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&strLen, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				const char *pstr = pbc + pc;
+				char *src = pbc + pc;
 				pc += strLen;
 
-				lang_pushlstring(ps, pstr, strLen);
+				lang_pushlstring(ps, src, strLen);
 				break;
 			}
 			case LANGV_OP_PUSHNIL:
@@ -155,28 +194,6 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				lang_pushnumber(ps, val);
 				break;
 			}
-			case LANGV_OP_PUSHVALUE:
-			{
-				pc++;
-
-				int idx;
-				memcpy(&idx, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				lang_pushvalue(ps, idx);
-				break;
-			}
-			case LANGV_OP_REPLACE:
-			{
-				pc++;
-
-				int idx;
-				memcpy(&idx, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				lang_replace(ps, idx);
-				break;
-			}
 			case LANGV_OP_RETURN:
 			{
 				pc++;
@@ -185,202 +202,340 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&nReturn, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_endcall(ps, nReturn);
+				lang_return(ps, nReturn);
 				pc = ps->callInfo.pc;
+				break;
+			}
+			case LANGV_OP_SETLOCAL:
+			{
+				pc++;
+
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				lang_setlocal(ps, idx);
+				break;
+			}
+			case LANGV_OP_SETUPVALUE:
+			{
+				pc++;
+
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				lang_setupvalue(ps, idx);
+				break;
+			}
+			case LANGV_OP_TAILCALL:
+			{
+				pc++;
+
+				int nArg;
+				memcpy(&nArg, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				lang_tailcall(ps, nArg);
+				pc = ps->callInfo.pc;
+				break;
+			}
+			case LANGV_OP_UNARYOP:
+			{
+				pc++;
+
+				char op = pbc[pc];
+				pc++;
+
+				lang_unaryop(ps, op);
 				break;
 			}
 			default:
 				lang_errmsg(ps, "unrecognized bytecode operation");
 		}
 		if (ps->msg != NULL) {
+			ps->callInfo.pc = pc;
 			return 1;
 		}
 	}
 	return 0;
 }
 
-int langV_dbg(const char *pbc, int len) {
+#define print_literal(l) ( callback("" l, sizeof(l)) )
+#define print_string(str, len) do {\
+	callback("\"", 1);\
+	callback((str), (len));\
+	callback("\"", 1);\
+} while (0);
+#define print_int(i, bits) do {\
+	char buf[(bits)];\
+	long a = (i), b = 0;\
+	while (b < (bits)) {\
+		buf[(bits) - b - 1] = (a & 1) ? '1' : '0';\
+		a = a >> 1;\
+		b = b + 1;\
+	}\
+	callback(buf, (bits));\
+} while (0);
+
+int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 	size_t pc = 0;
 	while (pc < len) {
-		printf("%d\t", pc);
+		char buf[64];
+		callback(buf, lang_tostringbufi(pc, buf));
+		print_literal(" ");
 		switch (pbc[pc]) {
 			case LANGV_OP_BINARYOP:
 			{
-				printf("binaryop\t");
+				print_literal("binaryop\t");
 				pc++;
 
 				char op = pbc[pc];
-				printf("char %d ", op);
+				callback(buf, lang_tostringbufi(op, buf));
 				pc++;
 				break;
 			}
 			case LANGV_OP_CALL:
 			{
-				printf("call\t");
+				print_literal("call\t");
 				pc++;
 
-				int argCount;
-				memcpy(&argCount, pbc + pc, sizeof(int));
-				printf("int %d ", argCount);
+				int nArg;
+				memcpy(&nArg, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(nArg, buf));
+				print_literal(" ");
 				pc += sizeof(int);
 
-				int returnCount;
-				memcpy(&returnCount, pbc + pc, sizeof(int));
-				printf("int %d ", returnCount);
+				int nReturn;
+				memcpy(&nReturn, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(nReturn, buf));
 				pc += sizeof(int);
 				break;
 			}
 			case LANGV_OP_COPY:
 			{
-				printf("copy\t");
+				print_literal("copy\t");
 				pc++;
 
 				int idxFrom;
 				memcpy(&idxFrom, pbc + pc, sizeof(int));
-				printf("int %d ", idxFrom);
+				callback(buf, lang_tostringbufi(idxFrom, buf));
+				print_literal(" ");
 				pc += sizeof(int);
 
 				int idxTo;
 				memcpy(&idxTo, pbc + pc, sizeof(int));
-				printf("int %d ", idxTo);
+				callback(buf, lang_tostringbufi(idxTo, buf));
 				pc += sizeof(int);
 				break;
 			}
 			case LANGV_OP_END:
 			{
-				printf("end\t");
+				print_literal("end\t");
 				pc++;
+				break;
+			}
+			case LANGV_OP_GETLOCAL:
+			{
+				print_literal("getlocal\t");
+				pc++;
+
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idx, buf));
+				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_GETUPVALUE:
+			{
+				print_literal("getupvalue\t");
+				pc++;
+
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idx, buf));
+				pc += sizeof(int);
 				break;
 			}
 			case LANGV_OP_JMP:
 			{
-				printf("jmp\t");
+				print_literal("jmp\t");
 				pc++;
 
 				int steps;
 				memcpy(&steps, pbc + pc, sizeof(int));
-				printf("int %d ", steps);
+				callback(buf, lang_tostringbufi(steps, buf));
 				pc += sizeof(int);
 				break;
 			}
 			case LANGV_OP_JMPZ:
 			{
-				printf("jmpz\t");
+				print_literal("jmpz\t");
 				pc++;
 
 				int steps;
 				memcpy(&steps, pbc + pc, sizeof(int));
-				printf("int %d ", steps);
+				callback(buf, lang_tostringbufi(steps, buf));
 				pc += sizeof(int);
 				break;
 			}
-			case LANGV_OP_LOADEXTERNVALUE:
+			case LANGV_OP_IMPORT:
 			{
-				printf("loadexternvalue\t");
+				print_literal("import\t");
 				pc++;
 
 				int strLen;
 				memcpy(&strLen, pbc + pc, sizeof(int));
-				printf("int %d ", strLen);
 				pc += sizeof(int);
 
-				const char *pstr = pbc + pc;
-				printf("string %.*s ", strLen, pstr);
+				const char *str = pbc + pc;
+				print_string(str, strLen);
 				pc += strLen;
 				break;
 			}
 			case LANGV_OP_POPN:
 			{
-				printf("popn\t");
+				print_literal("popn\t");
 				pc++;
 
 				int n;
 				memcpy(&n, pbc + pc, sizeof(int));
-				printf("int %d ", n);
+				callback(buf, lang_tostringbufi(n, buf));
 				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_PUSHLCLOSURE:
+			{
+				print_literal("pushlclosure\t");
+				pc++;
+
+				size_t pos;
+				memcpy(&pos, pbc + pc, sizeof(size_t));
+				callback(buf, lang_tostringbufi(pos, buf));
+				print_literal(" ");
+				pc += sizeof(size_t);
+
+				int nUpval;
+				memcpy(&nUpval, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(nUpval, buf));
+				print_literal(" ");
+				pc += sizeof(int);
+
+				for (int i = 0; i < nUpval; i++) {
+					char upvalType = pbc[pc];
+					callback(buf, lang_tostringbufi(upvalType, buf));
+					print_literal(" ");
+					pc++;
+
+					int idx;
+					memcpy(&idx, pbc + pc, sizeof(int));
+					callback(buf, lang_tostringbufi(idx, buf));
+					print_literal(" ");
+					pc += sizeof(int);
+				}
 				break;
 			}
 			case LANGV_OP_PUSHLFUNC:
 			{
-				printf("pushlfunc\t");
+				print_literal("pushlfunc\t");
 				pc++;
 
-				int pos;
-				memcpy(&pos, pbc + pc, sizeof(int));
-				printf("int %d", pos);
-				pc += sizeof(int);
+				size_t pos;
+				memcpy(&pos, pbc + pc, sizeof(size_t));
+				callback(buf, lang_tostringbufi(pos, buf));
+				pc += sizeof(size_t);
 				break;
 			}
 			case LANGV_OP_PUSHLSTRING:
 			{
-				printf("pushlstring\t");
+				print_literal("pushlstring\t");
 				pc++;
 
 				int strLen;
 				memcpy(&strLen, pbc + pc, sizeof(int));
-				printf("int %d ", strLen);
 				pc += sizeof(int);
 
-				const char *pstr = pbc + pc;
-				printf("string %.*s ", strLen, pstr);
+				const char *str = pbc + pc;
+				print_string(str, strLen);
 				pc += strLen;
 				break;
 			}
 			case LANGV_OP_PUSHNIL:
 			{
-				printf("pushnil\t");
+				print_literal("pushnil\t");
 				pc++;
 				break;
 			}
 			case LANGV_OP_PUSHNUMBER:
 			{
-				printf("pushnumber\t");
+				print_literal("pushnumber\t");
 				pc++;
 
 				lang_number val;
 				memcpy(&val, pbc + pc, sizeof(lang_number));
-				printf("double %f ", val);
+				callback(buf, lang_tostringbufd(val, buf));
 				pc += sizeof(lang_number);
-				break;
-			}
-			case LANGV_OP_PUSHVALUE:
-			{
-				printf("pushvalue\t");
-				pc++;
-
-				int idx;
-				memcpy(&idx, pbc + pc, sizeof(int));
-				printf("int %d ", idx);
-				pc += sizeof(int);
-				break;
-			}
-			case LANGV_OP_REPLACE:
-			{
-				printf("replace\t");
-				pc++;
-
-				int idx;
-				memcpy(&idx, pbc + pc, sizeof(int));
-				printf("int %d ", idx);
-				pc += sizeof(int);
 				break;
 			}
 			case LANGV_OP_RETURN:
 			{
-				printf("return\t");
+				print_literal("return\t");
 				pc++;
 
 				int nReturn;
 				memcpy(&nReturn, pbc + pc, sizeof(int));
-				printf("int %d ", nReturn);
+				callback(buf, lang_tostringbufi(nReturn, buf));
 				pc += sizeof(int);
 				break;
 			}
+			case LANGV_OP_SETLOCAL:
+			{
+				print_literal("setlocal\t");
+				pc++;
+
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idx, buf));
+				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_SETUPVALUE:
+			{
+				print_literal("setupvalue\t");
+				pc++;
+
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idx, buf));
+				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_TAILCALL:
+			{
+				print_literal("tailcall\t");
+				pc++;
+
+				int nArg;
+				memcpy(&nArg, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(nArg, buf));
+				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_UNARYOP:
+			{
+				print_literal("unaryop\t");
+				pc++;
+
+				char op = pbc[pc];
+				callback(buf, lang_tostringbufi(op, buf));
+				pc++;
+				break;
+			}
 			default:
-				printf("RuntimeError: Unrecognized bytecode op pc=%ld, op=%ld\n", pc, pbc[pc]);
+				print_literal("[unrecognized op]");
 				return 1;
 		}
-		printf("\n");
+		print_literal("\n");
 	}
 	return 0;
 }

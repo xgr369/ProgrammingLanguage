@@ -1,11 +1,13 @@
 /*
-* lexer.h / part of lang_P
-* Tokenizes lang source
+* lexer.h
+* Tokenizes source code
 */
 
 #ifndef LEXER_H
 #define LEXER_H
 
+#include <stdio.h>
+#include "conf.h"
 #include "vector.h"
 
 typedef struct {
@@ -17,7 +19,7 @@ typedef struct {
 typedef enum {
     LANGP_TOK_IDENTIFIER,
     LANGP_TOK_NUMBER, LANGP_TOK_OPERATOR,
-    LANGP_TOK_KEYWORD,
+    LANGP_TOK_KEYWORD, LANGP_TOK_STRING,
     LANGP_TOK_EOF, LANGP_TOK_WHITESPACE,
 } LangP_TokenType;
 
@@ -25,9 +27,9 @@ typedef enum {
     LANGP_TOK_KEYWORD_ELSE,
     LANGP_TOK_KEYWORD_ELSEIF,
     LANGP_TOK_KEYWORD_END,
-    LANGP_TOK_KEYWORD_EXTERN,
     LANGP_TOK_KEYWORD_FUNCTION,
     LANGP_TOK_KEYWORD_IF,
+    LANGP_TOK_KEYWORD_IMPORT,
     LANGP_TOK_KEYWORD_RETURN,
     LANGP_TOK_KEYWORD_THEN,
     LANGP_TOK_OPERATOR_ASSIGN,
@@ -45,6 +47,9 @@ typedef enum {
     LANGP_TOK_OPERATOR_COMMA,
     LANGP_TOK_OPERATOR_PARLEFT,
     LANGP_TOK_OPERATOR_PARRIGHT,
+    LANGP_TOK_OPERATOR_NOT,
+    LANGP_TOK_OPERATOR_LEN,
+    LANGP_TOK_OPERATOR_DOT,
 } LangP_TokenTag;
 
 typedef struct {
@@ -59,7 +64,7 @@ typedef struct {
     } value;
 } LangP_Token;
 
-void langP_printtok(const char *src, LangP_Token *ptok);
+void langP_print_tok(FILE *stream, const char *src, LangP_Token *ptok);
 Vector langP_tokenize(char *src, LangP_LexerState *pls);
 
 #endif // LEXER_H

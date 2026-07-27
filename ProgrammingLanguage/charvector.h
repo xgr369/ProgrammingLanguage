@@ -1,4 +1,3 @@
-
 #ifndef CHARVECTOR_H
 #define CHARVECTOR_H
 

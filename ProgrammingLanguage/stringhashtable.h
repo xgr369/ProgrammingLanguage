@@ -6,13 +6,12 @@
 struct StringHashTableEntry {
 	char *key;
 	struct StringHashTableEntry *next;
-	char value[];
+	char value[1];
 };
 typedef struct StringHashTableEntry StringHashTableEntry;
 
 typedef struct {
 	StringHashTableEntry **data;
-	size_t length;
 	size_t elemSize;
 	size_t size;
 } StringHashTable;

@@ -1,11 +1,12 @@
 /*
-* parser.h / part of lang_P
-* Parses tokens into ...?
+* parser.h
+* Parses tokens into an abstract syntax tree
 */
 
 #ifndef PARSER_H
 #define PARSER_H
 
+#include "conf.h"
 #include "lexer.h"
 #include "vector.h"
 
@@ -26,19 +27,25 @@ typedef enum {
 	LANGP_AST_OP_EQ,
 	LANGP_AST_OP_LT,
 	LANGP_AST_OP_GT,
+	LANGP_AST_OP_LE,
+	LANGP_AST_OP_GE,
+	LANGP_AST_OP_NEG,
+	LANGP_AST_OP_NOT,
+	LANGP_AST_OP_LEN,
 } LangP_AstOperation;
 
 
 typedef enum {
-	LANGP_AST_NODE_LEAF,
 	LANGP_AST_NODE_BINARYEXPR,
 	LANGP_AST_NODE_BLOCK,
 	LANGP_AST_NODE_CALL,
-	LANGP_AST_NODE_CONTROL_EXTERN,
 	LANGP_AST_NODE_CONTROL_FUNCTION,
 	LANGP_AST_NODE_CONTROL_IFELSEIF,
+	LANGP_AST_NODE_CONTROL_IMPORT,
 	LANGP_AST_NODE_CONTROL_RETURN,
 	LANGP_AST_NODE_EXPRLIST,
+	LANGP_AST_NODE_LEAF,
+	LANGP_AST_NODE_UNARYEXPR,
 	LANGP_AST_NODE_VARLIST,
 } LangP_AstNodeType;
 
@@ -49,6 +56,11 @@ typedef struct {
 	LangP_AstNode *pleft;
 	LangP_AstNode *pright;
 } LangP_AstBinaryExpression;
+
+typedef struct {
+	LangP_AstOperation op;
+	LangP_AstNode *pinner;
+} LangP_AstUnaryExpression;
 
 typedef struct {
 	LangP_AstNode *pexpr;
@@ -70,8 +82,9 @@ struct LangP_AstNode {
 	LangP_AstNodeType type;
 	union {
 		/*LEAF*/ LangP_Token *ptoken;
-		/*CONTROL_EXTERN: VARLIST, CONTROL_RETURN: EXPRLIST*/ LangP_AstNode *pnode;
+		/*CONTROL_IMPORT: VARLIST, CONTROL_RETURN: EXPRLIST*/ LangP_AstNode *pnode;
 		/*BINARYEXPR*/ LangP_AstBinaryExpression binaryExpression;
+		/*UNARYEXPR*/ LangP_AstUnaryExpression unaryExpression;
 		/*BLOCK,VARLIST,EXPRLIST*/ Vector nodes; // Vector<LandP_AstNode *>
 		/*CONTROL_FUNCTION*/ LangP_AstControlFunction controlFunction;
 		/*CONTROL_IFELSEIF*/ LangP_AstControlIfElseif controlIfElseif;
@@ -80,5 +93,6 @@ struct LangP_AstNode {
 };
 
 LangP_AstNode *langP_parse(char *src, Vector *ptokens, LangP_ParserState *pps);
+void langP_free(LangP_AstNode *pnode);
 
 #endif // PARSER_H

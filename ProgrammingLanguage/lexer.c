@@ -1,31 +1,32 @@
-#include <stdio.h>
-#include <ctype.h>
-#include <string.h>
-#include <stdlib.h>
 #include "lexer.h"
+#include <stdlib.h>
+#include <string.h>
 
-void langP_printtok(const char *src, LangP_Token *ptok) {
+void langP_print_tok(FILE *stream, const char *src, LangP_Token *ptok) {
     switch (ptok->type) {
         case LANGP_TOK_IDENTIFIER:
-            printf("identifier string=%.*s", ptok->value.string.length, src + ptok->value.string.index);
+            fprintf(stream, "identifier string=%.*s", ptok->value.string.length, src + ptok->value.string.index);
             break;
         case LANGP_TOK_EOF:
-            printf("EOF");
+            fprintf(stream, "EOF");
             break;
         case LANGP_TOK_NUMBER:
-            printf("number number=%f", ptok->value.number);
+            fprintf(stream, "number number=%f", ptok->value.number);
             break;
         case LANGP_TOK_OPERATOR:
-            printf("operator op=%d", ptok->value.tag);
+            fprintf(stream, "operator op=%d", ptok->value.tag);
             break;
         case LANGP_TOK_WHITESPACE:
-            printf("whitespace");
+            fprintf(stream, "whitespace");
             break;
         case LANGP_TOK_KEYWORD:
-            printf("keyword tag=%d", ptok->value.tag);
+            fprintf(stream, "keyword tag=%d", ptok->value.tag);
+            break;
+        case LANGP_TOK_STRING:
+            fprintf(stream, "string string=%.*s", ptok->value.string.length, src + ptok->value.string.index);
             break;
         default:
-            printf("unknown");
+            fprintf(stream, "unknown");
     }
 }
 
@@ -49,8 +50,7 @@ void read_whitespace(LangP_LexerState *pls, LangP_Token *ptok) {
 
 #define tok_equals(pls, ptok, l) ((ptok)->value.string.length == sizeof("" l) - 1 && strncmp((pls)->src + (ptok)->value.string.index, l, sizeof(l) - 1) == 0)
 
-/* read identifier or keyword */
-void read_identifier(LangP_LexerState *pls, LangP_Token *ptok) {
+void read_keyword_or_identifier(LangP_LexerState *pls, LangP_Token *ptok) {
     while (isalnum(peek(pls)) || peek(pls) == '_') {
         ptok->value.string.length++;
         consume(pls);
@@ -70,9 +70,9 @@ void read_identifier(LangP_LexerState *pls, LangP_Token *ptok) {
     } else if (tok_equals(pls, ptok, "end")) {
         ptok->type = LANGP_TOK_KEYWORD;
         ptok->value.tag = LANGP_TOK_KEYWORD_END;
-    } else if (tok_equals(pls, ptok, "extern")) {
+    } else if (tok_equals(pls, ptok, "import")) {
         ptok->type = LANGP_TOK_KEYWORD;
-        ptok->value.tag = LANGP_TOK_KEYWORD_EXTERN;
+        ptok->value.tag = LANGP_TOK_KEYWORD_IMPORT;
     } else if (tok_equals(pls, ptok, "function")) {
         ptok->type = LANGP_TOK_KEYWORD;
         ptok->value.tag = LANGP_TOK_KEYWORD_FUNCTION;
@@ -85,7 +85,6 @@ void read_identifier(LangP_LexerState *pls, LangP_Token *ptok) {
     return 0;
 }
 
-/* read number */
 int read_number(LangP_LexerState *pls, LangP_Token *ptok) {
     while (isdigit(peek(pls))) {
         ptok->value.string.length++;
@@ -103,19 +102,23 @@ int read_number(LangP_LexerState *pls, LangP_Token *ptok) {
     return 0;
 }
 
-int isoperatorstartchar(char c) {
-    if (c == '=' || c == '+' || c == '-' || c == '*' || c == '/' || c == '<' || c == '>' || c == ',' || c == '(' || c == ')') {
-        return 1;
+int read_string(LangP_LexerState *pls, LangP_Token *ptok) {
+    ptok->value.string.index++;
+    consume(pls);
+    while (peek(pls) != '"') {
+        if (peek(pls) == '\0') {
+            pls->msg = "unclosed string";
+            return 1;
+        }
+        ptok->value.string.length++;
+        consume(pls);
     }
+    consume(pls);
+    ptok->type = LANGP_TOK_STRING;
     return 0;
 }
 
-/* read operator */
-void read_operator(LangP_LexerState *pls, LangP_Token *ptok) {
-    /*while (isoperator(peek(pls))) {
-        ptok->value.string.length++;
-        consume(pls);
-    }*/
+int try_read_operator(LangP_LexerState *pls, LangP_Token *ptok) {
     char c = peek(pls);
     consume(pls);
     if (c == '=') {
@@ -136,15 +139,33 @@ void read_operator(LangP_LexerState *pls, LangP_Token *ptok) {
     } else if (c == '^') {
         ptok->value.tag = LANGP_TOK_OPERATOR_EXP;
     } else if (c == '<') {
-        ptok->value.tag = LANGP_TOK_OPERATOR_LT;
+        if (peek(pls) == '=') {
+            ptok->value.tag = LANGP_TOK_OPERATOR_LE;
+            consume(pls);
+        } else {
+            ptok->value.tag = LANGP_TOK_OPERATOR_LT;
+        }
     } else if (c == '>') {
-        ptok->value.tag = LANGP_TOK_OPERATOR_GT;
+        if (peek(pls) == '=') {
+            ptok->value.tag = LANGP_TOK_OPERATOR_GE;
+            consume(pls);
+        } else {
+            ptok->value.tag = LANGP_TOK_OPERATOR_GT;
+        }
     } else if (c == ',') {
         ptok->value.tag = LANGP_TOK_OPERATOR_COMMA;
     } else if (c == '(') {
         ptok->value.tag = LANGP_TOK_OPERATOR_PARLEFT;
     } else if (c == ')') {
         ptok->value.tag = LANGP_TOK_OPERATOR_PARRIGHT;
+    } else if (c == '!') {
+        ptok->value.tag = LANGP_TOK_OPERATOR_NOT;
+    } else if (c == '#') {
+        ptok->value.tag = LANGP_TOK_OPERATOR_LEN;
+    } else if (c == '.') {
+        ptok->value.tag = LANGP_TOK_OPERATOR_DOT;
+    } else {
+        return 1;
     }
     ptok->type = LANGP_TOK_OPERATOR;
     return 0;
@@ -168,7 +189,7 @@ int read_token(LangP_LexerState *pls, LangP_Token *ptok) {
     }
 
     if (isalpha(c) || c == '_') {
-        read_identifier(pls, ptok);
+        read_keyword_or_identifier(pls, ptok);
         return 0;
     }
 
@@ -176,12 +197,16 @@ int read_token(LangP_LexerState *pls, LangP_Token *ptok) {
         return read_number(pls, ptok);
     }
 
-    if (isoperatorstartchar(c)) {
-        read_operator(pls, ptok);
+    if (c == '"') {
+        return read_string(pls, ptok);
+    }
+
+    int result = try_read_operator(pls, ptok);
+    if (!result) {
         return 0;
     }
 
-    pls->msg = "Unknown token type";
+    pls->msg = "unknown token type";
     return 1;
 }
 
