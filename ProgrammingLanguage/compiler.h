@@ -6,7 +6,7 @@
 #ifndef COMPILER_H
 #define COMPILER_H
 
-#include "charvector.h"
+#include "charlist.h"
 #include "conf.h"
 #include "parser.h"
 #include "stringhashtable.h"
@@ -26,15 +26,15 @@ typedef struct {
 	size_t stackSize;
 	LangC_ScopeType type;
 	StringHashTable upvalueTable; // StringHashTable<int for upvalues>
-	Vector upvalues; // Vector<LangC_UpvalDesc>
+	List upvalues; // List<LangC_UpvalDesc>
 } LangC_ScopeContext;
 
 typedef struct {
-	Vector scopeContexts; // Vector<LangC_ScopeContext>
+	List scopeContexts; // List<LangC_ScopeContext *>
 	char *msg;
 } LangC_CompilerState;
 
-int langC_compile(char *src, LangP_AstNode *root, LangC_CompilerState *pcs, CharVector *dst);
+int langC_compile(char *src, LangP_AstNode *root, LangC_CompilerState *pcs, CharList *dst);
 void langC_free(LangC_CompilerState *pcs);
 
 #endif // COMPILER_H

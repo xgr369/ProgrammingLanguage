@@ -1,7 +1,7 @@
-#include "vector.h"
+#include "list.h"
 #include <string.h>
 
-int _vector_resize(Vector *pv) {
+int _list_resize(List *pv) {
 	pv->size = pv->size ? pv->size * 2 : 1;
 	void* ptr = realloc(pv->data, pv->size * pv->elemSize);
 	if (!ptr)
@@ -10,7 +10,7 @@ int _vector_resize(Vector *pv) {
 	return 0;
 }
 
-int vector_new(Vector *pv, size_t elemSize, size_t size) {
+int list_new(List *pv, size_t elemSize, size_t size) {
 	if (!pv || elemSize == 0)
 		return 1;
 	pv->data = malloc(size * elemSize);
@@ -22,7 +22,7 @@ int vector_new(Vector *pv, size_t elemSize, size_t size) {
 	return 0;
 }
 
-int vector_free(Vector* pv) {
+int list_free(List *pv) {
 	if (!pv || !pv->data)
 		return 1;
 	free(pv->data);
@@ -30,20 +30,20 @@ int vector_free(Vector* pv) {
 	return 0;
 }
 
-void *vector_at(Vector *pv, size_t index) {
+void *list_at(List *pv, size_t index) {
 	if (!pv || index < 0 || index >= pv->length)
 		return NULL;
 	return pv->data + pv->elemSize * index;
 }
 
-int vector_get(Vector* pv, size_t index, void *dst) {
+int list_get(List *pv, size_t index, void *dst) {
 	if (!pv || !dst || index < 0 || index >= pv->length)
 		return 1;
 	memcpy(dst, pv->data + index * pv->elemSize, pv->elemSize);
 	return 0;
 }
 
-int vector_pop(Vector *pv, void *dst) {
+int list_pop(List *pv, void *dst) {
 	if (!pv || pv->length == 0)
 		return 1;
 	if (dst)
@@ -52,25 +52,25 @@ int vector_pop(Vector *pv, void *dst) {
 	return 0;
 }
 
-int vector_popn(Vector *pv, size_t n) {
+int list_popn(List *pv, size_t n) {
 	if (!pv || n < 0 || pv->length < n)
 		return 1;
 	pv->length -= n;
 	return 0;
 }
 
-int vector_push(Vector *pv, const void *src) {
+int list_push(List *pv, const void *src) {
 	if (!pv || !src)
 		return 1;
 	if (pv->length * pv->elemSize >= pv->size)
-		if (_vector_resize(pv))
+		if (_list_resize(pv))
 			return 1;
 	memcpy(pv->data + pv->length * pv->elemSize, src, pv->elemSize);
 	pv->length++;
 	return 0;
 }
 
-int vector_removen(Vector *pv, size_t index, size_t n) {
+int list_removen(List *pv, size_t index, size_t n) {
 	if (!pv || index > pv->length || n > pv->length - index)
 		return 1;
 	size_t tailSize = pv->length - index - n;
@@ -79,7 +79,7 @@ int vector_removen(Vector *pv, size_t index, size_t n) {
 	return 0;
 }
 
-int vector_set(Vector *pv, size_t index, void *src) {
+int list_set(List *pv, size_t index, void *src) {
 	if (!pv || !src || index >= pv->length)
 		return 1;
 	memcpy(pv->data + index * pv->elemSize, src, pv->elemSize);

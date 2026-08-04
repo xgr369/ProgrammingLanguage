@@ -6,7 +6,7 @@
 struct StringHashTableEntry {
 	char *key;
 	struct StringHashTableEntry *next;
-	char value[1];
+	char value[];
 };
 typedef struct StringHashTableEntry StringHashTableEntry;
 

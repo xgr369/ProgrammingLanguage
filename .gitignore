@@ -24,3 +24,6 @@ x86/
 /ProgrammingLanguage/manual.ebnf
 /ProgrammingLanguage/ProgrammingLanguage.vcxproj
 /ProgrammingLanguage/ProgrammingLanguage.vcxproj.filters
+/ProgrammingLanguage/test2.lang
+/ProgrammingLanguage/test_lib.c
+/ProgrammingLanguage/test_lib.h

@@ -25,6 +25,9 @@ void langP_print_tok(FILE *stream, const char *src, LangP_Token *ptok) {
         case LANGP_TOK_STRING:
             fprintf(stream, "string string=%.*s", ptok->value.string.length, src + ptok->value.string.index);
             break;
+        case LANGP_TOK_SEMICOLON:
+            fprintf(stream, "semicolon");
+            break;
         default:
             fprintf(stream, "unknown");
     }
@@ -64,12 +67,6 @@ void read_keyword_or_identifier(LangP_LexerState *pls, LangP_Token *ptok) {
     } else if (tok_equals(pls, ptok, "if")) {
         ptok->type = LANGP_TOK_KEYWORD;
         ptok->value.tag = LANGP_TOK_KEYWORD_IF;
-    } else if (tok_equals(pls, ptok, "then")) {
-        ptok->type = LANGP_TOK_KEYWORD;
-        ptok->value.tag = LANGP_TOK_KEYWORD_THEN;
-    } else if (tok_equals(pls, ptok, "end")) {
-        ptok->type = LANGP_TOK_KEYWORD;
-        ptok->value.tag = LANGP_TOK_KEYWORD_END;
     } else if (tok_equals(pls, ptok, "import")) {
         ptok->type = LANGP_TOK_KEYWORD;
         ptok->value.tag = LANGP_TOK_KEYWORD_IMPORT;
@@ -164,6 +161,10 @@ int try_read_operator(LangP_LexerState *pls, LangP_Token *ptok) {
         ptok->value.tag = LANGP_TOK_OPERATOR_LEN;
     } else if (c == '.') {
         ptok->value.tag = LANGP_TOK_OPERATOR_DOT;
+    } else if (c == '{') {
+        ptok->value.tag = LANGP_TOK_OPERATOR_CBRACELEFT;
+    } else if (c == '}') {
+        ptok->value.tag = LANGP_TOK_OPERATOR_CBRACERIGHT;
     } else {
         return 1;
     }
@@ -180,6 +181,13 @@ int read_token(LangP_LexerState *pls, LangP_Token *ptok) {
 
     if (c == '\0') {
         ptok->type = LANGP_TOK_EOF;
+        consume(pls);
+        return 0;
+    }
+
+    if (c == ';') {
+        ptok->type = LANGP_TOK_SEMICOLON;
+        consume(pls);
         return 0;
     }
 
@@ -210,19 +218,19 @@ int read_token(LangP_LexerState *pls, LangP_Token *ptok) {
     return 1;
 }
 
-Vector langP_tokenize(char *src, LangP_LexerState *pls) {
+List langP_tokenize(char *src, LangP_LexerState *pls) {
     pls->src = src;
     pls->pos = 0;
     pls->msg = NULL;
     LangP_Token tok;
-    Vector tokens;
-    vector_new(&tokens, sizeof(LangP_Token), 10);
+    List tokens;
+    list_new(&tokens, sizeof(LangP_Token), 10);
     do {
         if (read_token(pls, &tok)) {
             break;
         }
         if (tok.type != LANGP_TOK_WHITESPACE) {
-            vector_push(&tokens, &tok);
+            list_push(&tokens, &tok);
         }
     } while (tok.type != LANGP_TOK_EOF);
 

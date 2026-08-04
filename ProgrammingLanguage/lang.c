@@ -20,10 +20,10 @@ static inline LangTValue *gettvaluelocal(LangState *L, int index) {
 	}
 }
 
-static LangObject *lang_newobject(LangState *L, size_t sz) {
+static LangObject *newobject(LangState *L, size_t sz) {
 	LangObject *plo = malloc(sz);
 	if (!plo) {
-		lang_errmsg(L, "lang_newobject: malloc failed");
+		lang_errmsg(L, "newobject: malloc failed");
 		return NULL;
 	}
 	plo->gcNext = L->gcLow;
@@ -41,7 +41,7 @@ void lang_binaryop(LangState *L, char op) {
 			return;
 		}
 		switch (pa->type) {
-			case LANG_TYPE_NIL:
+			case LANG_TYPE_NULL:
 				lang_pushnumber(L, 1);
 				break;
 			case LANG_TYPE_NUMBER:
@@ -93,7 +93,7 @@ void lang_binaryop(LangState *L, char op) {
 		if (op == LANG_OP_ADD) {
 			LangString *plsa = pa->value.ptr;
 			LangString *plsb = pb->value.ptr;
-			LangString *pls = lang_newobject(L, sizeof(LangString) + plsa->length + plsb->length);
+			LangString *pls = newobject(L, sizeof(LangString) + plsa->length + plsb->length);
 			if (!pls) {
 				return;
 			}
@@ -104,7 +104,7 @@ void lang_binaryop(LangState *L, char op) {
 			LangTValue ltv;
 			ltv.type = LANG_TYPE_STRING;
 			ltv.value.ptr = pls;
-			vector_push(&L->stack, &ltv);
+			list_push(&L->stack, &ltv);
 		} else {
 			lang_errmsg(L, "lang_binaryop: unrecognized binary operation on strings");
 		}
@@ -117,7 +117,7 @@ void lang_binaryop(LangState *L, char op) {
 void lang_call(LangState *L, int nArg, int nReturnExpected) {
 	LangTValue *pltv = gettvaluelocal(L, -nArg - 1);
 	if (pltv->type == LANG_TYPE_LFUNCTION) {
-		vector_push(&L->prevCallInfos, &L->callInfo);
+		list_push(&L->prevCallInfos, &L->callInfo);
 		L->callInfo.pc = pltv->value.ptr;
 		L->callInfo.stackFrame = L->stack.length - nArg;
 		L->callInfo.numReturnExpected = nReturnExpected;
@@ -130,44 +130,15 @@ void lang_call(LangState *L, int nArg, int nReturnExpected) {
 				lang_pushnil(L);
 			}
 		} else if (nReturn > nReturnExpected) {
-			vector_popn(&L->stack, nReturn - nReturnExpected);
+			list_popn(&L->stack, nReturn - nReturnExpected);
 		}
 		int nRemove = L->stack.length - nReturnExpected - (L->callInfo.stackFrame - 1);
-		vector_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
+		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 		L->callInfo.stackFrame = stackFramePrev;
 	} else {
 		lang_errmsg(L, "calling a non-function");
 	}
 }*/
-
-void lang_call(LangState *L, int nArg, int nReturnExpected) {
-	LangTValue *pltv = gettvaluelocal(L, -nArg - 1);
-	if (pltv->type == LANG_TYPE_LCLOSURE) {
-		vector_push(&L->prevCallInfos, &L->callInfo);
-		LangClosure *plc = pltv->value.ptr;
-		L->callInfo.pc = plc->ptr;
-		L->callInfo.stackFrame = L->stack.length - nArg;
-		L->callInfo.numReturnExpected = nReturnExpected;
-		L->callInfo.pclosure = plc;
-	} else if (pltv->type == LANG_TYPE_CFUNCTION) {
-		int stackFramePrev = L->callInfo.stackFrame;
-		L->callInfo.stackFrame = L->stack.length - nArg;
-		L->callInfo.pclosure = NULL; // not needed for cfunction
-		int nReturn = ((lang_cfunction)pltv->value.ptr)(L);
-		if (nReturn < nReturnExpected) {
-			for (int i = 0; i < nReturnExpected - nReturn; i++) {
-				lang_pushnil(L);
-			}
-		} else if (nReturn > nReturnExpected) {
-			vector_popn(&L->stack, nReturn - nReturnExpected);
-		}
-		int nRemove = L->stack.length - nReturnExpected - (L->callInfo.stackFrame - 1);
-		vector_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
-		L->callInfo.stackFrame = stackFramePrev;
-	} else {
-		lang_errmsg(L, "lang_call: calling a non-lclosure/cfunction");
-	}
-}
 
 // experimental GC through sweeping
 // TODO: 1. improve; 2. decide when to call this
@@ -198,14 +169,37 @@ void lang_collectgarbage(LangState *L) {
 	}
 }
 
-void lang_copy(LangState *L, int indexFrom, int indexTo) {
-	LangTValue *pltv = gettvaluelocal(L, indexFrom);
-	vector_set(&L->stack, indexTo, pltv);
+void lang_copy(LangState *L, int idxFrom, int idxTo) {
+	LangTValue *pltv = gettvaluelocal(L, idxFrom);
+	list_set(&L->stack, idxTo, pltv);
+}
+
+void lang_copytofield(LangState *L, int idxFrom, char *name, int len) {
+	lang_errmsg(L, "unimpl.");
+}
+
+void lang_copytoupvalue(LangState * L, int idxFrom, int idxTo) {
+	if (L->callInfo.pclosure == NULL) {
+		lang_errmsg(L, "lang_copytoupvalue: no upvalues");
+		return;
+	}
+	LangClosure *pclosure = L->callInfo.pclosure;
+	if (idxTo < 0 || idxTo >= pclosure->numUpval) {
+		lang_errmsg(L, "lang_copytoupvalue: invalid upvalue index");
+		return;
+	}
+	LangUpval lu = pclosure->upvalues[idxTo];
+	LangTValue *pltv = gettvaluelocal(L, idxFrom);
+	list_set(&L->stack, lu.index, pltv);
+}
+
+void lang_field(LangState *L, char *name, int len) {
+	lang_errmsg(L, "unimpl.");
 }
 
 void lang_getlocal(LangState *L, int index) {
 	LangTValue *pltv = gettvaluelocal(L, index);
-	vector_push(&L->stack, pltv);
+	list_push(&L->stack, pltv);
 }
 
 void lang_getupvalue(LangState *L, int index) {
@@ -219,8 +213,8 @@ void lang_getupvalue(LangState *L, int index) {
 		return;
 	}
 	LangUpval lu = pclosure->upvalues[index];
-	LangTValue *pltv = vector_at(&L->stack, lu.index);
-	vector_push(&L->stack, pltv);
+	LangTValue *pltv = list_at(&L->stack, lu.index);
+	list_push(&L->stack, pltv);
 }
 
 void lang_import(LangState *L, const char *name) {
@@ -229,35 +223,72 @@ void lang_import(LangState *L, const char *name) {
 		lang_errmsg(L, "lang_import: value not found");
 		return;
 	}
-	vector_push(&L->stack, &ltv);
+	list_push(&L->stack, &ltv);
 }
 
 void lang_pop(LangState *L) {
-	vector_pop(&L->stack, NULL);
+	list_pop(&L->stack, NULL);
 }
 
 void lang_popn(LangState *L, int n) {
-	vector_popn(&L->stack, n);
+	list_popn(&L->stack, n);
 }
 
-void lang_pushnil(LangState *L) {
+void lang_precall(LangState *L, int nArg, int nReturnExpected) {
+	LangTValue *pltv = gettvaluelocal(L, -nArg - 1);
+	if (pltv->type == LANG_TYPE_LCLOSURE) {
+		LangClosure *plc = pltv->value.ptr;
+		if (nArg != plc->numParam) {
+			lang_errmsg(L, "lang_call: wrong number of arguments");
+			return;
+		}
+		list_push(&L->prevCallInfos, &L->callInfo);
+		L->callInfo.pc = plc->ptr;
+		L->callInfo.stackFrame = L->stack.length - nArg;
+		L->callInfo.numReturnExpected = nReturnExpected;
+		L->callInfo.pclosure = plc;
+		return;
+	}
+	if (pltv->type == LANG_TYPE_CFUNCTION) {
+		LangCallInfo callInfoPrev = L->callInfo;
+		L->callInfo.stackFrame = L->stack.length - nArg;
+		L->callInfo.pclosure = NULL;
+		int nReturn = ((lang_cfunction)pltv->value.ptr)(L);
+		if (nReturn < nReturnExpected) {
+			for (int i = 0; i < nReturnExpected - nReturn; i++) {
+				lang_pushnull(L);
+			}
+		} else if (nReturn > nReturnExpected) {
+			list_popn(&L->stack, nReturn - nReturnExpected);
+		}
+		int nRemove = L->stack.length - nReturnExpected - (L->callInfo.stackFrame - 1);
+		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
+		L->callInfo = callInfoPrev;
+		return;
+	}
+	lang_errmsg(L, "lang_call: calling a non-lclosure/cfunction");
+}
+
+
+void lang_pushnull(LangState *L) {
 	LangTValue ltv;
-	ltv.type = LANG_TYPE_NIL;
-	vector_push(&L->stack, &ltv);
+	ltv.type = LANG_TYPE_NULL;
+	list_push(&L->stack, &ltv);
 }
 
 void lang_pushnumber(LangState *L, lang_number value) {
 	LangTValue ltv;
 	ltv.type = LANG_TYPE_NUMBER;
 	ltv.value.number = value;
-	vector_push(&L->stack, &ltv);
+	list_push(&L->stack, &ltv);
 }
 
-void lang_pushlclosure(LangState *L, size_t src, int nUpval, char *upvals) {
-	LangClosure *plc = lang_newobject(L, sizeof(LangClosure) + sizeof(LangUpval) * nUpval);
+void lang_pushlclosure(LangState *L, size_t src, int nParam, int nUpval, char *upvals) {
+	LangClosure *plc = newobject(L, sizeof(LangClosure) + sizeof(LangUpval) * nUpval);
 	if (!plc) {
 		return;
 	}
+	plc->numParam = nParam;
 	plc->numUpval = nUpval;
 	plc->ptr = src;
 	for (int i = 0; i < nUpval; i++) {
@@ -276,18 +307,11 @@ void lang_pushlclosure(LangState *L, size_t src, int nUpval, char *upvals) {
 	LangTValue ltv;
 	ltv.type = LANG_TYPE_LCLOSURE;
 	ltv.value.ptr = plc;
-	vector_push(&L->stack, &ltv);
-}
-
-void lang_pushlfunc(LangState *L, size_t src) {
-	LangTValue ltv;
-	ltv.type = LANG_TYPE_LFUNCTION;
-	ltv.value.ptr = src;
-	vector_push(&L->stack, &ltv);
+	list_push(&L->stack, &ltv);
 }
 
 void lang_pushlstring(LangState *L, const char *str, int len) {
-	LangString *pls = lang_newobject(L, sizeof(LangString) + len);
+	LangString *pls = newobject(L, sizeof(LangString) + len);
 	if (!pls) {
 		return;
 	}
@@ -297,29 +321,42 @@ void lang_pushlstring(LangState *L, const char *str, int len) {
 	LangTValue ltv;
 	ltv.type = LANG_TYPE_STRING;
 	ltv.value.ptr = pls;
-	vector_push(&L->stack, &ltv);
+	list_push(&L->stack, &ltv);
+}
+
+void lang_pushtable(LangState *L) {
+	LangTable *plt = newobject(L, sizeof(LangTable));
+	if (!plt) {
+		return;
+	}
+
+	LangTValue ltv;
+	ltv.type = LANG_TYPE_TABLE;
+	ltv.value.ptr = plt;
+	list_push(&L->stack, &ltv);
 }
 
 void lang_removen(LangState *L, int index, int n) {
-	vector_removen(&L->stack, L->callInfo.stackFrame + index, n);
+	list_removen(&L->stack, L->callInfo.stackFrame + index, n);
 }
 
 void lang_return(LangState *L, int nReturn) {
-	if (nReturn < L->callInfo.numReturnExpected) {
-		for (int i = 0; i < L->callInfo.numReturnExpected - nReturn; i++) {
-			lang_pushnil(L);
+	int nReturnExpected = L->callInfo.numReturnExpected;
+	if (nReturn < nReturnExpected) {
+		for (int i = 0; i < nReturnExpected - nReturn; i++) {
+			lang_pushnull(L);
 		}
-	} else if (nReturn > L->callInfo.numReturnExpected) {
-		vector_popn(&L->stack, nReturn - L->callInfo.numReturnExpected);
+	} else if (nReturn > nReturnExpected) {
+		list_popn(&L->stack, nReturn - nReturnExpected);
 	}
-	int nRemove = L->stack.length - L->callInfo.numReturnExpected - (L->callInfo.stackFrame - 1);
-	vector_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
-	vector_pop(&L->prevCallInfos, &L->callInfo);
+	int nRemove = L->stack.length - nReturnExpected - (L->callInfo.stackFrame - 1);
+	list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
+	list_pop(&L->prevCallInfos, &L->callInfo);
 }
 
 void lang_setlocal(LangState *L, int index) {
 	LangTValue *pltv = gettvaluelocal(L, -1);
-	vector_set(&L->stack, L->callInfo.stackFrame + index, pltv);
+	list_set(&L->stack, L->callInfo.stackFrame + index, pltv);
 	lang_pop(L);
 }
 
@@ -333,21 +370,40 @@ void lang_setupvalue(LangState *L, int index) {
 		lang_errmsg(L, "lang_setupvalue: invalid upvalue index");
 		return;
 	}
-	LangTValue *pltv = gettvaluelocal(L, -1);
 	LangUpval lu = pclosure->upvalues[index];
-	vector_set(&L->stack, lu.index, pltv);
+	LangTValue *pltv = gettvaluelocal(L, -1);
+	list_set(&L->stack, lu.index, pltv);
+	lang_pop(L);
 }
 
 void lang_tailcall(LangState *L, int nArg) {
 	LangTValue *pltv = gettvaluelocal(L, -nArg - 1);
 	if (pltv->type == LANG_TYPE_LCLOSURE) {
+		int nRemove = L->stack.length - nArg - L->callInfo.stackFrame;
+		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 		LangClosure *plc = pltv->value.ptr;
 		L->callInfo.pc = plc->ptr;
 		L->callInfo.pclosure = plc;
+	} else if (pltv->type == LANG_TYPE_CFUNCTION) {
 		int nRemove = L->stack.length - nArg - L->callInfo.stackFrame;
-		vector_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
+		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
+		L->callInfo.stackFrame = L->stack.length - nArg;
+		L->callInfo.pclosure = NULL;
+		int nReturn = ((lang_cfunction)pltv->value.ptr)(L);
+		int nReturnExpected = L->callInfo.numReturnExpected;
+		if (nReturn < nReturnExpected) {
+			for (int i = 0; i < nReturnExpected - nReturn; i++) {
+				lang_pushnull(L);
+			}
+		} else if (nReturn > nReturnExpected) {
+			list_popn(&L->stack, nReturn - nReturnExpected);
+		}
+		nRemove = L->stack.length - nReturnExpected - (L->callInfo.stackFrame - 1);
+		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
+		list_pop(&L->prevCallInfos, &L->callInfo);
+
 	} else {
-		lang_errmsg(L, "lang_tailcall: calling a non-lclosure");
+		lang_errmsg(L, "lang_tailcall: calling a non-lclosure/cfunction");
 		return;
 	}
 }
@@ -357,10 +413,10 @@ void lang_tostring(LangState *L) {
 	if (pltv->type == LANG_TYPE_STRING) {
 		return;
 	}
-	vector_pop(&L->stack, NULL);
+	list_pop(&L->stack, NULL);
 	switch (pltv->type) {
-		case LANG_TYPE_NIL:
-			lang_pushliteral(L, "nil");
+		case LANG_TYPE_NULL:
+			lang_pushliteral(L, "null");
 			return;
 		case LANG_TYPE_NUMBER:
 		{
@@ -370,30 +426,33 @@ void lang_tostring(LangState *L) {
 			lang_pushlstring(L, buf, len);
 		} break;
 		case LANG_TYPE_CFUNCTION:
-		case LANG_TYPE_LFUNCTION:
 		case LANG_TYPE_LCLOSURE:
 		{
 			char buf[64];
 			int len;
-			len = snprintf(buf, sizeof(buf), "function: %p", pltv->value.ptr);
+			len = snprintf(buf, sizeof(buf), "<function %p>", pltv->value.ptr);
+			lang_pushlstring(L, buf, len);
+		} break;
+		case LANG_TYPE_TABLE:
+		{
+			char buf[64];
+			int len;
+			len = snprintf(buf, sizeof(buf), "<table %p>", pltv->value.ptr);
 			lang_pushlstring(L, buf, len);
 		} break;
 		default:
-			lang_pushnil(L);
+			lang_pushnull(L);
 			break;
 	}
 }
 
 void lang_tonumber(LangState *L) {
 	LangTValue *pltv = gettvaluelocal(L, -1);
-	if (pltv->type == LANG_TYPE_NUMBER) {
+	if (pltv->type == LANG_TYPE_NUMBER || pltv->type == LANG_TYPE_NULL) {
 		return;
 	}
-	vector_pop(&L->stack, NULL);
+	list_pop(&L->stack, NULL);
 	switch (pltv->type) {
-		case LANG_TYPE_NIL:
-			lang_pushnumber(L, 0);
-			break;
 		case LANG_TYPE_STRING:
 		{
 			lang_number d;
@@ -401,11 +460,11 @@ void lang_tonumber(LangState *L) {
 			if (lang_tonumberbuf(pls->data, pls->length, &d)) {
 				lang_pushnumber(L, d);
 			} else {
-				lang_pushnil(L);
+				lang_pushnull(L);
 			}
 		} break;
 		default:
-			lang_pushnil(L);
+			lang_pushnull(L);
 			break;
 	}
 }
@@ -426,7 +485,7 @@ void lang_unaryop(LangState *L, char op) {
 		{
 			if (pltv->type == LANG_TYPE_NUMBER) {
 				lang_pushnumber(L, !pltv->value.number);
-			} else if (pltv->type == LANG_TYPE_NIL) {
+			} else if (pltv->type == LANG_TYPE_NULL) {
 				lang_pushnumber(L, 1);
 			} else {
 				lang_pushnumber(L, 0);
@@ -447,9 +506,33 @@ void lang_unaryop(LangState *L, char op) {
 	}
 }
 
+LangTValue *lang_gettvalueglobal(LangState *L, int index) {
+	return gettvalueglobal(L, index);
+}
+
+LangTValue *lang_gettvaluelocal(LangState *L, int index) {
+	return gettvaluelocal(L, index);
+}
+
 int lang_iszero(LangState *L) {
 	LangTValue *pltv = gettvaluelocal(L, -1);
-	return pltv->type == LANG_TYPE_NIL || (pltv->type == LANG_TYPE_NUMBER && pltv->value.number == 0);
+	return pltv->type == LANG_TYPE_NULL || (pltv->type == LANG_TYPE_NUMBER && pltv->value.number == 0);
+}
+
+void lang_registerfunc(LangState *L, const char *name, lang_cfunction func) {
+	LangTValue ltv;
+	ltv.type = LANG_TYPE_CFUNCTION;
+	ltv.value.ptr = func;
+	stringhashtable_put(&L->importTable, name, &ltv);
+}
+
+void lang_pushuserdata(LangState *L, size_t sz) {
+	LangUserdata *plo = newobject(L, sizeof(LangUserdata) + sz);
+
+	LangTValue ltv;
+	ltv.type = LANG_TYPE_USERDATA;
+	ltv.value.ptr = plo;
+	list_push(&L->stack, &ltv);
 }
 
 int lang_tonumberbuf(const char *str, int len, double *out) {
@@ -470,55 +553,36 @@ int lang_tostringbufi(int i, char *buf) {
 	return snprintf(buf, LANG_MAX_NUMBER2STR, "%d", i);
 }
 
-LangTValue *lang_gettvalueglobal(LangState *L, int index) {
-	return gettvalueglobal(L, index);
-}
-
-LangTValue *lang_gettvaluelocal(LangState *L, int index) {
-	return gettvaluelocal(L, index);
-}
-
-void lang_registerfunc(LangState *L, const char *name, lang_cfunction func) {
-	LangTValue ltv;
-	ltv.type = LANG_TYPE_CFUNCTION;
-	ltv.value.ptr = func;
-	stringhashtable_put(&L->importTable, name, &ltv);
-}
-
 void lang_compile(LangState *L, LangWriteCallback callback, char *src) {
 	LangP_LexerState ls;
-	Vector tokens = langP_tokenize(src, &ls);
+	List tokens = langP_tokenize(src, &ls);
 	if (ls.msg) {
 		L->msg = ls.msg;
-		vector_free(&tokens);
+		list_free(&tokens);
 		return;
 	}
 	LangP_ParserState prs;
 	LangP_AstNode *ast = langP_parse(src, &tokens, &prs);
 	if (!ast) {
 		L->msg = prs.msg;
-		vector_free(&tokens);
+		list_free(&tokens);
 		langP_free(ast);
 		return;
 	}
 	LangC_CompilerState cs;
-	CharVector bc;
-	if (charvector_new(&bc, 10)) {
+	CharList bc;
+	if (charlist_new(&bc, 10)) {
 		return;
 	}
 	if (langC_compile(src, ast, &cs, &bc)) {
 		L->msg = cs.msg;
-		vector_free(&tokens);
-		langP_free(ast);
-		langC_free(&cs);
-		charvector_free(&bc);
-		return;
+	} else {
+		callback(bc.data, bc.length);
 	}
-	callback(bc.data, bc.length);
-	vector_free(&tokens);
+	list_free(&tokens);
 	langP_free(ast);
 	langC_free(&cs);
-	charvector_free(&bc);
+	charlist_free(&bc);
 	return;
 }
 
@@ -534,10 +598,10 @@ LangState *lang_newstate() {
 	}
 	L->gcLow = NULL;
 	L->msg = NULL;
-	if (vector_new(&L->prevCallInfos, sizeof(LangCallInfo), 1)) {
+	if (list_new(&L->prevCallInfos, sizeof(LangCallInfo), 1)) {
 		return NULL;
 	}
-	if (vector_new(&L->stack, sizeof(LangTValue), LANG_STACK_BASE_SIZE)) {
+	if (list_new(&L->stack, sizeof(LangTValue), LANG_STACK_BASE_SIZE)) {
 		return NULL;
 	}
 	return L;
@@ -545,6 +609,6 @@ LangState *lang_newstate() {
 
 void lang_close(LangState *L) {
 	stringhashtable_free(&L->importTable);
-	vector_free(&L->prevCallInfos);
-	vector_free(&L->stack);
+	list_free(&L->prevCallInfos);
+	list_free(&L->stack);
 }

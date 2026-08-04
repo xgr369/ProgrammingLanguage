@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 #include "conf.h"
-#include "vector.h"
+#include "list.h"
 
 typedef struct {
     const char *src;
@@ -20,18 +20,17 @@ typedef enum {
     LANGP_TOK_IDENTIFIER,
     LANGP_TOK_NUMBER, LANGP_TOK_OPERATOR,
     LANGP_TOK_KEYWORD, LANGP_TOK_STRING,
+    LANGP_TOK_SEMICOLON,
     LANGP_TOK_EOF, LANGP_TOK_WHITESPACE,
 } LangP_TokenType;
 
 typedef enum {
     LANGP_TOK_KEYWORD_ELSE,
     LANGP_TOK_KEYWORD_ELSEIF,
-    LANGP_TOK_KEYWORD_END,
     LANGP_TOK_KEYWORD_FUNCTION,
     LANGP_TOK_KEYWORD_IF,
     LANGP_TOK_KEYWORD_IMPORT,
     LANGP_TOK_KEYWORD_RETURN,
-    LANGP_TOK_KEYWORD_THEN,
     LANGP_TOK_OPERATOR_ASSIGN,
     LANGP_TOK_OPERATOR_EQ,
     LANGP_TOK_OPERATOR_NEQ,
@@ -50,6 +49,8 @@ typedef enum {
     LANGP_TOK_OPERATOR_NOT,
     LANGP_TOK_OPERATOR_LEN,
     LANGP_TOK_OPERATOR_DOT,
+    LANGP_TOK_OPERATOR_CBRACELEFT,
+    LANGP_TOK_OPERATOR_CBRACERIGHT,
 } LangP_TokenTag;
 
 typedef struct {
@@ -65,6 +66,6 @@ typedef struct {
 } LangP_Token;
 
 void langP_print_tok(FILE *stream, const char *src, LangP_Token *ptok);
-Vector langP_tokenize(char *src, LangP_LexerState *pls);
+List langP_tokenize(char *src, LangP_LexerState *pls);
 
 #endif // LEXER_H

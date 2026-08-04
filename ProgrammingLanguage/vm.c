@@ -1,6 +1,6 @@
 #include "vm.h"
 
-int langV_exec(LangState *ps, const char *pbc, int len) {
+int langV_exec(LangState *L, const char *pbc, int len) {
 	size_t pc = 0;
 	while (pc < len) {
 		//printf("pc=%ld, op=%ld\n", pc, pbc[pc]);
@@ -13,7 +13,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				char op = pbc[pc];
 				pc++;
 
-				lang_binaryop(ps, op);
+				lang_binaryop(L, op);
 				break;
 			}
 			case LANGV_OP_CALL:
@@ -28,30 +28,29 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&nReturn, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				ps->callInfo.pc = pc;
-				lang_call(ps, nArg, nReturn);
-				pc = ps->callInfo.pc;
-				break;
-			}
-			case LANGV_OP_COPY:
-			{
-				pc++;
-
-				int idxFrom;
-				memcpy(&idxFrom, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				int idxTo;
-				memcpy(&idxTo, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				lang_copy(ps, idxFrom, idxTo);
+				L->callInfo.pc = pc;
+				lang_precall(L, nArg, nReturn);
+				pc = L->callInfo.pc;
 				break;
 			}
 			case LANGV_OP_END:
 			{
-				lang_return(ps, 0);
-				pc = ps->callInfo.pc;
+				lang_return(L, 0);
+				pc = L->callInfo.pc;
+				break;
+			}
+			case LANGV_OP_FIELD:
+			{
+				pc++;
+
+				int strLen;
+				memcpy(&strLen, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				const char *name = pbc + pc;
+				pc += strLen;
+
+				lang_field(L, name, strLen);
 				break;
 			}
 			case LANGV_OP_GETLOCAL:
@@ -62,7 +61,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&idx, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_getlocal(ps, idx);
+				lang_getlocal(L, idx);
 				break;
 			}
 			case LANGV_OP_GETUPVALUE:
@@ -73,7 +72,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&idx, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_getupvalue(ps, idx);
+				lang_getupvalue(L, idx);
 				break;
 			}
 			case LANGV_OP_JMP:
@@ -91,8 +90,8 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 			{
 				pc++;
 
-				int flag = lang_iszero(ps);
-				lang_pop(ps);
+				int flag = lang_iszero(L);
+				lang_pop(L);
 				if (flag) {
 					int steps;
 					memcpy(&steps, pbc + pc, sizeof(int));
@@ -113,15 +112,63 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 
 				char *name = malloc(len + 1);
 				if (!name) {
-					lang_errmsg(ps, "allocation failed");
+					lang_errmsg(L, "allocation failed");
 					return 1;
 				}
 				memcpy(name, pbc + pc, len);
 				name[len] = '\0';
 				pc += len;
 
-				lang_import(ps, name);
+				lang_import(L, name);
 				free(name);
+				break;
+			}
+			case LANGV_OP_MOVE:
+			{
+				pc++;
+
+				int idxFrom;
+				memcpy(&idxFrom, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				int idxTo;
+				memcpy(&idxTo, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				lang_copy(L, idxFrom, idxTo);
+				break;
+			}
+			case LANGV_OP_MOVETOFIELD:
+			{
+				pc++;
+
+				int idxFrom;
+				memcpy(&idxFrom, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				int strLen;
+				memcpy(&strLen, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				const char *name = pbc + pc;
+				pc += strLen;
+
+				lang_copytofield(L, idxFrom, name, strLen);
+				break;
+			}
+			case LANGV_OP_MOVETOUPVALUE:
+			{
+				pc++;
+
+				int idxFrom;
+				memcpy(&idxFrom, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				int idxTo;
+				memcpy(&idxTo, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				lang_copytoupvalue(L, idxFrom, idxTo);
 				break;
 			}
 			case LANGV_OP_POPN:
@@ -132,7 +179,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&n, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_popn(ps, n);
+				lang_popn(L, n);
 				break;
 			}
 			case LANGV_OP_PUSHLCLOSURE:
@@ -143,6 +190,10 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&src, pbc + pc, sizeof(size_t));
 				pc += sizeof(size_t);
 
+				int nParam;
+				memcpy(&nParam, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
 				int nUpval;
 				memcpy(&nUpval, pbc + pc, sizeof(int));
 				pc += sizeof(int);
@@ -150,17 +201,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				void *upvals = pbc + pc;
 				pc += nUpval * (sizeof(char) + sizeof(int));
 
-				lang_pushlclosure(ps, src, nUpval, upvals);
-			} break;
-			case LANGV_OP_PUSHLFUNC:
-			{
-				pc++;
-
-				size_t src;
-				memcpy(&src, pbc + pc, sizeof(size_t));
-				pc += sizeof(size_t);
-
-				lang_pushlfunc(ps, src);
+				lang_pushlclosure(L, src, nParam, nUpval, upvals);
 			} break;
 			case LANGV_OP_PUSHLSTRING:
 			{
@@ -173,14 +214,14 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				char *src = pbc + pc;
 				pc += strLen;
 
-				lang_pushlstring(ps, src, strLen);
+				lang_pushlstring(L, src, strLen);
 				break;
 			}
-			case LANGV_OP_PUSHNIL:
+			case LANGV_OP_PUSHNULL:
 			{
 				pc++;
 
-				lang_pushnil(ps);
+				lang_pushnull(L);
 				break;
 			}
 			case LANGV_OP_PUSHNUMBER:
@@ -191,7 +232,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&val, pbc + pc, sizeof(lang_number));
 				pc += sizeof(lang_number);
 
-				lang_pushnumber(ps, val);
+				lang_pushnumber(L, val);
 				break;
 			}
 			case LANGV_OP_RETURN:
@@ -202,8 +243,8 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&nReturn, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_return(ps, nReturn);
-				pc = ps->callInfo.pc;
+				lang_return(L, nReturn);
+				pc = L->callInfo.pc;
 				break;
 			}
 			case LANGV_OP_SETLOCAL:
@@ -214,7 +255,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&idx, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_setlocal(ps, idx);
+				lang_setlocal(L, idx);
 				break;
 			}
 			case LANGV_OP_SETUPVALUE:
@@ -225,7 +266,7 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&idx, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_setupvalue(ps, idx);
+				lang_setupvalue(L, idx);
 				break;
 			}
 			case LANGV_OP_TAILCALL:
@@ -236,8 +277,8 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				memcpy(&nArg, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_tailcall(ps, nArg);
-				pc = ps->callInfo.pc;
+				lang_tailcall(L, nArg);
+				pc = L->callInfo.pc;
 				break;
 			}
 			case LANGV_OP_UNARYOP:
@@ -247,14 +288,14 @@ int langV_exec(LangState *ps, const char *pbc, int len) {
 				char op = pbc[pc];
 				pc++;
 
-				lang_unaryop(ps, op);
+				lang_unaryop(L, op);
 				break;
 			}
 			default:
-				lang_errmsg(ps, "unrecognized bytecode operation");
+				lang_errmsg(L, "unrecognized bytecode operation");
 		}
-		if (ps->msg != NULL) {
-			ps->callInfo.pc = pc;
+		if (L->msg != NULL) {
+			L->callInfo.pc = pc;
 			return 1;
 		}
 	}
@@ -312,27 +353,24 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				pc += sizeof(int);
 				break;
 			}
-			case LANGV_OP_COPY:
-			{
-				print_literal("copy\t");
-				pc++;
-
-				int idxFrom;
-				memcpy(&idxFrom, pbc + pc, sizeof(int));
-				callback(buf, lang_tostringbufi(idxFrom, buf));
-				print_literal(" ");
-				pc += sizeof(int);
-
-				int idxTo;
-				memcpy(&idxTo, pbc + pc, sizeof(int));
-				callback(buf, lang_tostringbufi(idxTo, buf));
-				pc += sizeof(int);
-				break;
-			}
 			case LANGV_OP_END:
 			{
 				print_literal("end\t");
 				pc++;
+				break;
+			}
+			case LANGV_OP_FIELD:
+			{
+				print_literal("field\t");
+				pc++;
+
+				int strLen;
+				memcpy(&strLen, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				const char *str = pbc + pc;
+				print_string(str, strLen);
+				pc += strLen;
 				break;
 			}
 			case LANGV_OP_GETLOCAL:
@@ -393,6 +431,60 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				pc += strLen;
 				break;
 			}
+			case LANGV_OP_MOVE:
+			{
+				print_literal("move\t");
+				pc++;
+
+				int idxFrom;
+				memcpy(&idxFrom, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idxFrom, buf));
+				print_literal(" ");
+				pc += sizeof(int);
+
+				int idxTo;
+				memcpy(&idxTo, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idxTo, buf));
+				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_MOVETOFIELD:
+			{
+				print_literal("movetofield\t");
+				pc++;
+
+				int idxFrom;
+				memcpy(&idxFrom, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idxFrom, buf));
+				print_literal(" ");
+				pc += sizeof(int);
+
+				int strLen;
+				memcpy(&strLen, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				const char *str = pbc + pc;
+				print_string(str, strLen);
+				pc += strLen;
+				break;
+			}
+			case LANGV_OP_MOVETOUPVALUE:
+			{
+				print_literal("movetoupvalue\t");
+				pc++;
+
+				int idxFrom;
+				memcpy(&idxFrom, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idxFrom, buf));
+				print_literal(" ");
+				pc += sizeof(int);
+
+				int idxTo;
+				memcpy(&idxTo, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idxTo, buf));
+				pc += sizeof(int);
+				break;
+			}
 			case LANGV_OP_POPN:
 			{
 				print_literal("popn\t");
@@ -415,6 +507,12 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				print_literal(" ");
 				pc += sizeof(size_t);
 
+				int nParam;
+				memcpy(&nParam, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(nParam, buf));
+				print_literal(" ");
+				pc += sizeof(int);
+
 				int nUpval;
 				memcpy(&nUpval, pbc + pc, sizeof(int));
 				callback(buf, lang_tostringbufi(nUpval, buf));
@@ -435,17 +533,6 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				}
 				break;
 			}
-			case LANGV_OP_PUSHLFUNC:
-			{
-				print_literal("pushlfunc\t");
-				pc++;
-
-				size_t pos;
-				memcpy(&pos, pbc + pc, sizeof(size_t));
-				callback(buf, lang_tostringbufi(pos, buf));
-				pc += sizeof(size_t);
-				break;
-			}
 			case LANGV_OP_PUSHLSTRING:
 			{
 				print_literal("pushlstring\t");
@@ -460,9 +547,9 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				pc += strLen;
 				break;
 			}
-			case LANGV_OP_PUSHNIL:
+			case LANGV_OP_PUSHNULL:
 			{
-				print_literal("pushnil\t");
+				print_literal("pushnull\t");
 				pc++;
 				break;
 			}

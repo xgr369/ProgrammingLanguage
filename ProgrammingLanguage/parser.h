@@ -8,18 +8,17 @@
 
 #include "conf.h"
 #include "lexer.h"
-#include "vector.h"
+#include "list.h"
 
 typedef struct {
 	char* src;
-	Vector *ptokens; // Vector<LangP_Token>
+	List *ptokens; // List<LangP_Token>
 	size_t pos;
 	char *msg;
 } LangP_ParserState;
 
 typedef enum {
 	LANGP_AST_OP_UNKNOWN,
-	LANGP_AST_OP_ASSIGN,
 	LANGP_AST_OP_ADD,
 	LANGP_AST_OP_SUB,
 	LANGP_AST_OP_MUL,
@@ -36,20 +35,28 @@ typedef enum {
 
 
 typedef enum {
+	LANGP_AST_NODE_ASSIGNMENT,
 	LANGP_AST_NODE_BINARYEXPR,
 	LANGP_AST_NODE_BLOCK,
 	LANGP_AST_NODE_CALL,
 	LANGP_AST_NODE_CONTROL_FUNCTION,
 	LANGP_AST_NODE_CONTROL_IFELSEIF,
+	LANGP_AST_NODE_CONTROL_ELSE,
 	LANGP_AST_NODE_CONTROL_IMPORT,
 	LANGP_AST_NODE_CONTROL_RETURN,
 	LANGP_AST_NODE_EXPRLIST,
+	LANGP_AST_NODE_FIELDEXPR,
 	LANGP_AST_NODE_LEAF,
 	LANGP_AST_NODE_UNARYEXPR,
 	LANGP_AST_NODE_VARLIST,
 } LangP_AstNodeType;
 
 typedef struct LangP_AstNode LangP_AstNode;
+
+typedef struct {
+	LangP_AstNode *pvarlist;
+	LangP_AstNode *pexprlist;
+} LangP_AstAssignment;
 
 typedef struct {
 	LangP_AstOperation op;
@@ -68,7 +75,11 @@ typedef struct {
 } LangP_AstCall;
 
 typedef struct {
-	LangP_AstNode *pvarlist;
+	LangP_AstNode *pblock;
+} LangP_AstControlElse;
+
+typedef struct {
+	LangP_AstNode *pparamlist;
 	LangP_AstNode *pblock;
 } LangP_AstControlFunction;
 
@@ -78,6 +89,11 @@ typedef struct {
 	LangP_AstNode *pnext;
 } LangP_AstControlIfElseif;
 
+typedef struct {
+	LangP_AstNode *pparent;
+	LangP_AstNode *pchild;
+} LangP_AstFieldExpression;
+
 struct LangP_AstNode {
 	LangP_AstNodeType type;
 	union {
@@ -85,14 +101,17 @@ struct LangP_AstNode {
 		/*CONTROL_IMPORT: VARLIST, CONTROL_RETURN: EXPRLIST*/ LangP_AstNode *pnode;
 		/*BINARYEXPR*/ LangP_AstBinaryExpression binaryExpression;
 		/*UNARYEXPR*/ LangP_AstUnaryExpression unaryExpression;
-		/*BLOCK,VARLIST,EXPRLIST*/ Vector nodes; // Vector<LandP_AstNode *>
+		/*BLOCK,VARLIST,EXPRLIST*/ List nodes; // List<LandP_AstNode *>
+		/*CONTROL_ELSE*/ LangP_AstControlElse controlElse;
 		/*CONTROL_FUNCTION*/ LangP_AstControlFunction controlFunction;
 		/*CONTROL_IFELSEIF*/ LangP_AstControlIfElseif controlIfElseif;
 		/*CALL*/ LangP_AstCall call;
+		/*FIELDEXPR*/ LangP_AstFieldExpression fieldExpression;
+		/*ASSIGNMENT*/ LangP_AstAssignment assignment;
 	} value;
 };
 
-LangP_AstNode *langP_parse(char *src, Vector *ptokens, LangP_ParserState *pps);
+LangP_AstNode *langP_parse(char *src, List *ptokens, LangP_ParserState *pps);
 void langP_free(LangP_AstNode *pnode);
 
 #endif // PARSER_H
