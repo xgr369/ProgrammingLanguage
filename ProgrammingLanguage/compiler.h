@@ -25,8 +25,9 @@ typedef struct {
 	StringHashTable identifierTable; // StringHashTable<int>
 	size_t stackSize;
 	LangC_ScopeType type;
-	StringHashTable upvalueTable; // StringHashTable<int for upvalues>
-	List upvalues; // List<LangC_UpvalDesc>
+	StringHashTable upvalTable; // StringHashTable<int for upvalues>
+	List upvals; // List<LangC_UpvalDesc>
+	int capturedLocalCount;
 } LangC_ScopeContext;
 
 typedef struct {
