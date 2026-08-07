@@ -113,32 +113,19 @@ void lang_binaryop(LangState *L, char op) {
 	}
 }
 
-/*
-void lang_call(LangState *L, int nArg, int nReturnExpected) {
-	LangTValue *pltv = gettvaluelocal(L, -nArg - 1);
-	if (pltv->type == LANG_TYPE_LFUNCTION) {
-		list_push(&L->prevCallInfos, &L->callInfo);
-		L->callInfo.pc = pltv->value.ptr;
-		L->callInfo.stackFrame = L->stack.length - nArg;
-		L->callInfo.numReturnExpected = nReturnExpected;
-	} else if (pltv->type == LANG_TYPE_CFUNCTION) {
-		int stackFramePrev = L->callInfo.stackFrame;
-		L->callInfo.stackFrame = L->stack.length - nArg;
-		int nReturn = ((lang_cfunction)pltv->value.ptr)(L);
-		if (nReturn < nReturnExpected) {
-			for (int i = 0; i < nReturnExpected - nReturn; i++) {
-				lang_pushnil(L);
-			}
-		} else if (nReturn > nReturnExpected) {
-			list_popn(&L->stack, nReturn - nReturnExpected);
-		}
-		int nRemove = L->stack.length - nReturnExpected - (L->callInfo.stackFrame - 1);
-		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
-		L->callInfo.stackFrame = stackFramePrev;
-	} else {
-		lang_errmsg(L, "calling a non-function");
+void lang_closeupvaluen(LangState *L, int n) {
+	LangUpval *plu = L->upvalOpen;
+	for (int i = 0; i < n; i++) {
+		LangUpval *pluNext = plu->gcNext;
+		LangTValue *pltv = gettvalueglobal(L, plu->index);
+		plu->type = LANG_UPVAL_CLOSED;
+		plu->tvalue = *pltv;
+		plu->gcNext = L->upvalClosed;
+		L->upvalClosed = plu;
+		plu = pluNext;
 	}
-}*/
+	L->upvalOpen = plu;
+}
 
 // experimental GC through sweeping
 // TODO: 1. improve; 2. decide when to call this
@@ -171,7 +158,7 @@ void lang_collectgarbage(LangState *L) {
 
 void lang_copy(LangState *L, int idxFrom, int idxTo) {
 	LangTValue *pltv = gettvaluelocal(L, idxFrom);
-	list_set(&L->stack, idxTo, pltv);
+	list_set(&L->stack, L->callInfo.stackFrame + idxTo, pltv);
 }
 
 void lang_copytofield(LangState *L, int idxFrom, char *name, int len) {
@@ -188,9 +175,15 @@ void lang_copytoupvalue(LangState * L, int idxFrom, int idxTo) {
 		lang_errmsg(L, "lang_copytoupvalue: invalid upvalue index");
 		return;
 	}
-	LangUpval lu = pclosure->upvalues[idxTo];
-	LangTValue *pltv = gettvaluelocal(L, idxFrom);
-	list_set(&L->stack, lu.index, pltv);
+	LangUpval *plu = pclosure->upvalues[idxTo];
+	LangTValue *pltvFrom = gettvaluelocal(L, idxFrom);
+
+	if (plu->type == LANG_UPVAL_OPEN) {
+		LangTValue *pltvTo = gettvalueglobal(L, plu->index);
+		*pltvTo = *pltvFrom;
+	} else {
+		plu->tvalue = *pltvFrom;
+	}
 }
 
 void lang_field(LangState *L, char *name, int len) {
@@ -212,8 +205,13 @@ void lang_getupvalue(LangState *L, int index) {
 		lang_errmsg(L, "lang_getupvalue: invalid upvalue index");
 		return;
 	}
-	LangUpval lu = pclosure->upvalues[index];
-	LangTValue *pltv = list_at(&L->stack, lu.index);
+	LangUpval *plu = pclosure->upvalues[index];
+	LangTValue *pltv;
+	if (plu->type == LANG_UPVAL_OPEN) {
+		pltv = gettvalueglobal(L, plu->index);
+	} else {
+		pltv = &plu->tvalue;
+	}
 	list_push(&L->stack, pltv);
 }
 
@@ -292,16 +290,29 @@ void lang_pushlclosure(LangState *L, size_t src, int nParam, int nUpval, char *u
 	plc->numUpval = nUpval;
 	plc->ptr = src;
 	for (int i = 0; i < nUpval; i++) {
-		char upvalType = upvals[i]; // ignored for now
+		char upvalType = *upvals;
 		upvals++;
 
 		int idx;
 		memcpy(&idx, upvals, sizeof(int));
 		upvals += sizeof(int);
 
-		LangUpval lu;
-		lu.index = idx;
-		plc->upvalues[i] = lu;
+		LangUpval *plu;
+		if (upvalType == LANG_UPVAL_NEW) {
+			plu = newobject(L, sizeof(LangUpval));
+			if (!plu) {
+				return;
+			}
+			plu->gcNext = L->upvalOpen;
+			L->upvalOpen = plu;
+			list_push(&L->upvalStack, &plu);
+			plu->type = LANG_UPVAL_OPEN;
+			plu->index = L->callInfo.stackFrame + idx;
+		} else {
+			LangClosure *pclosure = L->callInfo.pclosure;
+			plu = pclosure->upvalues[idx];
+		}
+		plc->upvalues[i] = plu;
 	}
 
 	LangTValue ltv;
@@ -321,6 +332,14 @@ void lang_pushlstring(LangState *L, const char *str, int len) {
 	LangTValue ltv;
 	ltv.type = LANG_TYPE_STRING;
 	ltv.value.ptr = pls;
+	list_push(&L->stack, &ltv);
+}
+
+void lang_pushrange(LangState *L, int start, int end) {
+	LangTValue ltv;
+	ltv.type = LANG_TYPE_RANGE;
+	ltv.value.range.start = start;
+	ltv.value.range.end = end;
 	list_push(&L->stack, &ltv);
 }
 
@@ -370,10 +389,15 @@ void lang_setupvalue(LangState *L, int index) {
 		lang_errmsg(L, "lang_setupvalue: invalid upvalue index");
 		return;
 	}
-	LangUpval lu = pclosure->upvalues[index];
-	LangTValue *pltv = gettvaluelocal(L, -1);
-	list_set(&L->stack, lu.index, pltv);
-	lang_pop(L);
+	LangUpval *plu = pclosure->upvalues[index];
+	LangTValue *pltvFrom = gettvaluelocal(L, -1);
+	if (plu->type == LANG_UPVAL_OPEN) {
+		LangTValue *pltvTo = gettvalueglobal(L, plu->index);
+		*pltvTo = *pltvFrom;
+	} else {
+		plu->tvalue = *pltvFrom;
+	}
+	list_pop(&L->stack, NULL);
 }
 
 void lang_tailcall(LangState *L, int nArg) {
@@ -604,6 +628,11 @@ LangState *lang_newstate() {
 	if (list_new(&L->stack, sizeof(LangTValue), LANG_STACK_BASE_SIZE)) {
 		return NULL;
 	}
+	L->upvalOpen = NULL;
+	L->upvalClosed = NULL;
+	if (list_new(&L->upvalStack, sizeof(LangUpval *), 1)) {
+		return NULL;
+	} // --test
 	return L;
 }
 

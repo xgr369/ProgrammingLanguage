@@ -34,6 +34,9 @@ typedef struct {
 	const char *msg;
 	List prevCallInfos; // List<LangCallInfo>
 	List stack; // List<LangTValue>
+	LangObject *upvalOpen;
+	LangObject *upvalClosed;
+	List upvalStack; // List<LangUpval *> // do we even need this?
 } LangState;
 
 #define LANG_TYPE_NULL		0
@@ -43,14 +46,21 @@ typedef struct {
 #define LANG_TYPE_LCLOSURE  5
 #define LANG_TYPE_TABLE		6
 #define LANG_TYPE_USERDATA	7
+#define LANG_TYPE_RANGE     8
+
+typedef int (*lang_cfunction)(LangState *L);
 
 typedef double lang_number;
 
-typedef int (*lang_cfunction)(LangState *L);
+typedef struct {
+	int start;
+	int end;
+} lang_range;
 
 typedef union {
 	void *ptr;
 	lang_number number;
+	lang_range range;
 } LangValue;
 
 typedef struct {
@@ -58,11 +68,18 @@ typedef struct {
 	char type;
 } LangTValue;
 
-#define LANG_UPVAL_STACK 0
-#define LANG_UPVAL_UPVAL 1
+#define LANG_UPVAL_OPEN		0
+#define LANG_UPVAL_CLOSED	1
+#define LANG_UPVAL_NEW		2
+#define LANG_UPVAL_OLD		3
 
 typedef struct {
-	int index;
+	LangObject;
+	char type;
+	union {
+		int index;
+		LangTValue tvalue;
+	};
 } LangUpval;
 
 typedef struct {
@@ -70,7 +87,7 @@ typedef struct {
 	void *ptr;
 	int numParam;
 	int numUpval;
-	LangUpval upvalues[];
+	LangUpval *upvalues[];
 } LangClosure;
 
 typedef struct {
@@ -105,6 +122,7 @@ typedef struct {
 #define LANG_OP_LEN		11
 
 void		lang_binaryop		(LangState *L, char op);						// [-2, +1]
+void		lang_closeupvaluen	(LangState *L, int n);							// [-0, +0]
 void		lang_collectgarbage	(LangState *L);									// [-0, +0]
 void		lang_copy			(LangState *L, int idxFrom, int idxTo);			// [-0, +0]
 void		lang_copytofield	(LangState *L, int idxFrom, char *name, int len); // [-0, +0]
@@ -115,20 +133,22 @@ void		lang_getupvalue		(LangState *L, int index);						// [-0, +1]
 void		lang_import			(LangState *L, char *name);						// [-0, +1]
 void		lang_pop			(LangState *L);									// [-1, +0]
 void		lang_popn			(LangState *L, int n);							// [-n, +0]
-void		lang_precall(LangState *L, int nArg, int nReturnExpected);			// [-0, +0] internal
 void		lang_pushnull		(LangState *L);									// [-0, +1]
 void		lang_pushnumber		(LangState *L, lang_number value);				// [-0, +1]
 void		lang_pushlclosure	(LangState *L, size_t src, int nParam, int nUpval, char *upvals); // [-0, +1]
 void		lang_pushlstring	(LangState *L, char *str, int len);				// [-0, +1]
+void		lang_pushrange		(LangState *L, int start, int end);				// [-0, +1]
 void		lang_pushtable		(LangState *L);									// [-0, +1]
 void		lang_removen		(LangState *L, int index, int n);				// [-n, +0]
-void		lang_return 		(LangState *L, int nReturn);					// [-..., +0] internal
 void		lang_setlocal		(LangState *L, int index);						// [-1, +0]
 void		lang_setupvalue		(LangState *L, int index);						// [-1, +0]
-void		lang_tailcall		(LangState *L, int nArg);						// [-..., 0] internal
 void		lang_tostring		(LangState *L);									// [-1, +1]
 void		lang_tonumber		(LangState *L);									// [-1, +1]
 void		lang_unaryop		(LangState *L, char op);						// [-1, +1]
+
+void		lang_precall		(LangState *L, int nArg, int nReturnExpected);	// [-0, +0]
+void		lang_return 		(LangState *L, int nReturn);					// [-..., +0]
+void		lang_tailcall		(LangState *L, int nArg);						// [-..., 0]
 
 LangTValue *lang_gettvalueglobal(LangState *L, int index);
 LangTValue *lang_gettvaluelocal	(LangState *L, int index);
