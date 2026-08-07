@@ -101,7 +101,7 @@ struct LangP_AstNode {
 		/*CONTROL_IMPORT: VARLIST, CONTROL_RETURN: EXPRLIST*/ LangP_AstNode *pnode;
 		/*BINARYEXPR*/ LangP_AstBinaryExpression binaryExpression;
 		/*UNARYEXPR*/ LangP_AstUnaryExpression unaryExpression;
-		/*BLOCK,VARLIST,EXPRLIST*/ List nodes; // List<LandP_AstNode *>
+		/*BLOCK,VARLIST,EXPRLIST*/ List nodes; // List<LangP_AstNode *>
 		/*CONTROL_ELSE*/ LangP_AstControlElse controlElse;
 		/*CONTROL_FUNCTION*/ LangP_AstControlFunction controlFunction;
 		/*CONTROL_IFELSEIF*/ LangP_AstControlIfElseif controlIfElseif;
