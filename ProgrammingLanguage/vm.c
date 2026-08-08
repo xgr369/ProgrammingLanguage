@@ -33,15 +33,15 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 				pc = L->callInfo.pc;
 				break;
 			}
-			case LANGV_OP_CLOSEUPVALN:
+			case LANGV_OP_CLOSEUPVALS:
 			{
 				pc++;
 
-				int n;
-				memcpy(&n, pbc + pc, sizeof(int));
-				pc += sizeof(n);
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				pc += sizeof(int);
 
-				lang_closeupvaluen(L, n);
+				lang_closeupvals(L, idx);
 				break;
 			}
 			case LANGV_OP_END:
@@ -362,15 +362,15 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				pc += sizeof(int);
 				break;
 			}
-			case LANGV_OP_CLOSEUPVALN:
+			case LANGV_OP_CLOSEUPVALS:
 			{
-				print_literal("closeupvaln\t");
+				print_literal("closeupvals\t");
 				pc++;
 
-				int n;
-				memcpy(&n, pbc + pc, sizeof(int));
-				callback(buf, lang_tostringbufi(n, buf));
-				pc += sizeof(n);
+				int idx;
+				memcpy(&idx, pbc + pc, sizeof(int));
+				callback(buf, lang_tostringbufi(idx, buf));
+				pc += sizeof(int);
 				break;
 			}
 			case LANGV_OP_END:
