@@ -36,7 +36,6 @@ typedef struct {
 	List stack; // List<LangTValue>
 	LangObject *upvalOpen;
 	LangObject *upvalClosed;
-	List upvalStack; // List<LangUpval *> // do we even need this?
 } LangState;
 
 #define LANG_TYPE_NULL		0
@@ -70,8 +69,8 @@ typedef struct {
 
 #define LANG_UPVAL_OPEN		0
 #define LANG_UPVAL_CLOSED	1
-#define LANG_UPVAL_NEW		2
-#define LANG_UPVAL_OLD		3
+#define LANG_UPVAL_NEW		0
+#define LANG_UPVAL_OLD		1
 
 typedef struct {
 	LangObject;
@@ -122,8 +121,8 @@ typedef struct {
 #define LANG_OP_LEN		11
 
 void		lang_binaryop		(LangState *L, char op);						// [-2, +1]
-void		lang_closeupvaluen	(LangState *L, int n);							// [-0, +0]
 void		lang_collectgarbage	(LangState *L);									// [-0, +0]
+void		lang_closeupvals	(LangState *L, int index);						// [-0, +0]
 void		lang_copy			(LangState *L, int idxFrom, int idxTo);			// [-0, +0]
 void		lang_copytofield	(LangState *L, int idxFrom, char *name, int len); // [-0, +0]
 void		lang_copytoupvalue	(LangState *L, int idxFrom, int idxTo);			// [-0, +0]

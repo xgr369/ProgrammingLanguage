@@ -31,6 +31,27 @@ static LangObject *newobject(LangState *L, size_t sz) {
 	return plo;
 }
 
+static LangUpval *findupval(LangState *L, int index) {
+	int idxGlobal = L->callInfo.stackFrame + index;
+	LangUpval **pp = &L->upvalOpen;
+	while (*pp != NULL && (*pp)->index > idxGlobal) {
+		pp = &(*pp)->gcNext;
+	}
+	if (*pp != NULL && (*pp)->index == idxGlobal) {
+		return *pp;
+	}
+	LangUpval *plu = newobject(L, sizeof(LangUpval));
+	if (!plu) {
+		return NULL;
+	}
+	plu->type = LANG_UPVAL_OPEN;
+	plu->index = idxGlobal;
+
+	plu->gcNext = *pp;
+	*pp = plu;
+	return plu;
+}
+
 void lang_binaryop(LangState *L, char op) {
 	LangTValue *pa = gettvaluelocal(L, -2);
 	LangTValue *pb = gettvaluelocal(L, -1);
@@ -113,20 +134,6 @@ void lang_binaryop(LangState *L, char op) {
 	}
 }
 
-void lang_closeupvaluen(LangState *L, int n) {
-	LangUpval *plu = L->upvalOpen;
-	for (int i = 0; i < n; i++) {
-		LangUpval *pluNext = plu->gcNext;
-		LangTValue *pltv = gettvalueglobal(L, plu->index);
-		plu->type = LANG_UPVAL_CLOSED;
-		plu->tvalue = *pltv;
-		plu->gcNext = L->upvalClosed;
-		L->upvalClosed = plu;
-		plu = pluNext;
-	}
-	L->upvalOpen = plu;
-}
-
 // experimental GC through sweeping
 // TODO: 1. improve; 2. decide when to call this
 void lang_collectgarbage(LangState *L) {
@@ -154,6 +161,22 @@ void lang_collectgarbage(LangState *L) {
 			pplo = &plo->gcNext;
 		}
 	}
+}
+
+void lang_closeupvals(LangState * L, int index) {
+	LangUpval **pp = &L->upvalOpen;
+	while (*pp != NULL && (*pp)->index >= index) {
+		LangUpval *plu = *pp;
+		LangTValue *pltv = gettvalueglobal(L, plu->index);
+		plu->type = LANG_UPVAL_CLOSED;
+		plu->tvalue = *pltv;
+
+		plu->gcNext = L->upvalClosed;
+		L->upvalClosed = plu;
+
+		pp = &(*pp)->gcNext;
+	}
+	L->upvalOpen = *pp;
 }
 
 void lang_copy(LangState *L, int idxFrom, int idxTo) {
@@ -259,6 +282,7 @@ void lang_precall(LangState *L, int nArg, int nReturnExpected) {
 		} else if (nReturn > nReturnExpected) {
 			list_popn(&L->stack, nReturn - nReturnExpected);
 		}
+		lang_closeupvals(L, L->callInfo.stackFrame);
 		int nRemove = L->stack.length - nReturnExpected - (L->callInfo.stackFrame - 1);
 		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 		L->callInfo = callInfoPrev;
@@ -299,15 +323,10 @@ void lang_pushlclosure(LangState *L, size_t src, int nParam, int nUpval, char *u
 
 		LangUpval *plu;
 		if (upvalType == LANG_UPVAL_NEW) {
-			plu = newobject(L, sizeof(LangUpval));
+			plu = findupval(L, idx);
 			if (!plu) {
 				return;
 			}
-			plu->gcNext = L->upvalOpen;
-			L->upvalOpen = plu;
-			list_push(&L->upvalStack, &plu);
-			plu->type = LANG_UPVAL_OPEN;
-			plu->index = L->callInfo.stackFrame + idx;
 		} else {
 			LangClosure *pclosure = L->callInfo.pclosure;
 			plu = pclosure->upvalues[idx];
@@ -368,6 +387,7 @@ void lang_return(LangState *L, int nReturn) {
 	} else if (nReturn > nReturnExpected) {
 		list_popn(&L->stack, nReturn - nReturnExpected);
 	}
+	lang_closeupvals(L, L->callInfo.stackFrame);
 	int nRemove = L->stack.length - nReturnExpected - (L->callInfo.stackFrame - 1);
 	list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 	list_pop(&L->prevCallInfos, &L->callInfo);
@@ -376,7 +396,7 @@ void lang_return(LangState *L, int nReturn) {
 void lang_setlocal(LangState *L, int index) {
 	LangTValue *pltv = gettvaluelocal(L, -1);
 	list_set(&L->stack, L->callInfo.stackFrame + index, pltv);
-	lang_pop(L);
+	list_pop(&L->stack, NULL);
 }
 
 void lang_setupvalue(LangState *L, int index) {
@@ -403,12 +423,14 @@ void lang_setupvalue(LangState *L, int index) {
 void lang_tailcall(LangState *L, int nArg) {
 	LangTValue *pltv = gettvaluelocal(L, -nArg - 1);
 	if (pltv->type == LANG_TYPE_LCLOSURE) {
+		lang_closeupvals(L, L->callInfo.stackFrame);
 		int nRemove = L->stack.length - nArg - L->callInfo.stackFrame;
 		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 		LangClosure *plc = pltv->value.ptr;
 		L->callInfo.pc = plc->ptr;
 		L->callInfo.pclosure = plc;
 	} else if (pltv->type == LANG_TYPE_CFUNCTION) {
+		lang_closeupvals(L, L->callInfo.stackFrame);
 		int nRemove = L->stack.length - nArg - L->callInfo.stackFrame;
 		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 		L->callInfo.stackFrame = L->stack.length - nArg;
@@ -422,10 +444,10 @@ void lang_tailcall(LangState *L, int nArg) {
 		} else if (nReturn > nReturnExpected) {
 			list_popn(&L->stack, nReturn - nReturnExpected);
 		}
+		lang_closeupvals(L, L->callInfo.stackFrame);
 		nRemove = L->stack.length - nReturnExpected - (L->callInfo.stackFrame - 1);
 		list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 		list_pop(&L->prevCallInfos, &L->callInfo);
-
 	} else {
 		lang_errmsg(L, "lang_tailcall: calling a non-lclosure/cfunction");
 		return;
@@ -630,9 +652,6 @@ LangState *lang_newstate() {
 	}
 	L->upvalOpen = NULL;
 	L->upvalClosed = NULL;
-	if (list_new(&L->upvalStack, sizeof(LangUpval *), 1)) {
-		return NULL;
-	} // --test
 	return L;
 }
 
