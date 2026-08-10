@@ -1,7 +1,7 @@
 #include "vm.h"
 
 int langV_exec(LangState *L, const char *pbc, int len) {
-	size_t pc = 0;
+	int pc = 0;
 	while (pc < len) {
 		//printf("pc=%ld, op=%ld\n", pc, pbc[pc]);
 		LangV_Operation _op = pbc[pc];
@@ -44,13 +44,20 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 				lang_closeupvals(L, idx);
 				break;
 			}
+			case LANGV_OP_DEBUGGER:
+			{
+				pc++;
+
+				L->debug(L);
+				break;
+			}
 			case LANGV_OP_END:
 			{
 				lang_return(L, 0);
 				pc = L->callInfo.pc;
 				break;
 			}
-			case LANGV_OP_FIELD:
+			case LANGV_OP_GETFIELD:
 			{
 				pc++;
 
@@ -61,7 +68,7 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 				const char *name = pbc + pc;
 				pc += strLen;
 
-				lang_field(L, name, strLen);
+				lang_getfield(L, name, strLen);
 				break;
 			}
 			case LANGV_OP_GETLOCAL:
@@ -134,54 +141,6 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 				free(name);
 				break;
 			}
-			case LANGV_OP_MOVE:
-			{
-				pc++;
-
-				int idxFrom;
-				memcpy(&idxFrom, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				int idxTo;
-				memcpy(&idxTo, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				lang_copy(L, idxFrom, idxTo);
-				break;
-			}
-			case LANGV_OP_MOVETOFIELD:
-			{
-				pc++;
-
-				int idxFrom;
-				memcpy(&idxFrom, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				int strLen;
-				memcpy(&strLen, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				const char *name = pbc + pc;
-				pc += strLen;
-
-				lang_copytofield(L, idxFrom, name, strLen);
-				break;
-			}
-			case LANGV_OP_MOVETOUPVAL:
-			{
-				pc++;
-
-				int idxFrom;
-				memcpy(&idxFrom, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				int idxTo;
-				memcpy(&idxTo, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				lang_copytoupvalue(L, idxFrom, idxTo);
-				break;
-			}
 			case LANGV_OP_POPN:
 			{
 				pc++;
@@ -193,13 +152,13 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 				lang_popn(L, n);
 				break;
 			}
-			case LANGV_OP_PUSHLCLOSURE:
+			case LANGV_OP_PUSHFUNCTION:
 			{
 				pc++;
 
-				size_t src;
-				memcpy(&src, pbc + pc, sizeof(size_t));
-				pc += sizeof(size_t);
+				int src;
+				memcpy(&src, pbc + pc, sizeof(int));
+				pc += sizeof(int);
 
 				int nParam;
 				memcpy(&nParam, pbc + pc, sizeof(int));
@@ -209,7 +168,7 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 				memcpy(&nUpval, pbc + pc, sizeof(int));
 				pc += sizeof(int);
 
-				lang_pushlclosure(L, src, nParam, nUpval, pbc + pc);
+				lang_pushlfunction(L, src, nParam, nUpval, pbc + pc);
 				pc += nUpval * (sizeof(char) + sizeof(int));
 			} break;
 			case LANGV_OP_PUSHLSTRING:
@@ -244,6 +203,13 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 				lang_pushnumber(L, val);
 				break;
 			}
+			case LANGV_OP_PUSHTHIS:
+			{
+				pc++;
+
+				lang_pushthis(L);
+				break;
+			}
 			case LANGV_OP_RETURN:
 			{
 				pc++;
@@ -254,6 +220,20 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 
 				lang_return(L, nReturn);
 				pc = L->callInfo.pc;
+				break;
+			}
+			case LANGV_OP_SETFIELD:
+			{
+				pc++;
+
+				int strLen;
+				memcpy(&strLen, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				const char *name = pbc + pc;
+				pc += strLen;
+
+				lang_setfield(L, name, strLen);
 				break;
 			}
 			case LANGV_OP_SETLOCAL:
@@ -301,9 +281,10 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 				break;
 			}
 			default:
-				lang_errmsg(L, "unrecognized bytecode operation");
+				assert(0);
+				return 1;
 		}
-		if (L->msg != NULL) {
+		if (L->errorCode != LANG_OK) {
 			L->callInfo.pc = pc;
 			return 1;
 		}
@@ -317,19 +298,9 @@ int langV_exec(LangState *L, const char *pbc, int len) {
 	callback((str), (len));\
 	callback("\"", 1);\
 } while (0);
-#define print_int(i, bits) do {\
-	char buf[(bits)];\
-	long a = (i), b = 0;\
-	while (b < (bits)) {\
-		buf[(bits) - b - 1] = (a & 1) ? '1' : '0';\
-		a = a >> 1;\
-		b = b + 1;\
-	}\
-	callback(buf, (bits));\
-} while (0);
 
 int langV_print(LangWriteCallback callback, const char *pbc, int len) {
-	size_t pc = 0;
+	int pc = 0;
 	while (pc < len) {
 		char buf[64];
 		callback(buf, lang_tostringbufi(pc, buf));
@@ -373,15 +344,21 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				pc += sizeof(int);
 				break;
 			}
+			case LANGV_OP_DEBUGGER:
+			{
+				print_literal("debugger\t");
+				pc++;
+				break;
+			}
 			case LANGV_OP_END:
 			{
 				print_literal("end\t");
 				pc++;
 				break;
 			}
-			case LANGV_OP_FIELD:
+			case LANGV_OP_GETFIELD:
 			{
-				print_literal("field\t");
+				print_literal("getfield\t");
 				pc++;
 
 				int strLen;
@@ -451,60 +428,6 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				pc += strLen;
 				break;
 			}
-			case LANGV_OP_MOVE:
-			{
-				print_literal("move\t");
-				pc++;
-
-				int idxFrom;
-				memcpy(&idxFrom, pbc + pc, sizeof(int));
-				callback(buf, lang_tostringbufi(idxFrom, buf));
-				print_literal(" ");
-				pc += sizeof(int);
-
-				int idxTo;
-				memcpy(&idxTo, pbc + pc, sizeof(int));
-				callback(buf, lang_tostringbufi(idxTo, buf));
-				pc += sizeof(int);
-				break;
-			}
-			case LANGV_OP_MOVETOFIELD:
-			{
-				print_literal("movetofield\t");
-				pc++;
-
-				int idxFrom;
-				memcpy(&idxFrom, pbc + pc, sizeof(int));
-				callback(buf, lang_tostringbufi(idxFrom, buf));
-				print_literal(" ");
-				pc += sizeof(int);
-
-				int strLen;
-				memcpy(&strLen, pbc + pc, sizeof(int));
-				pc += sizeof(int);
-
-				const char *str = pbc + pc;
-				print_string(str, strLen);
-				pc += strLen;
-				break;
-			}
-			case LANGV_OP_MOVETOUPVAL:
-			{
-				print_literal("movetoupval\t");
-				pc++;
-
-				int idxFrom;
-				memcpy(&idxFrom, pbc + pc, sizeof(int));
-				callback(buf, lang_tostringbufi(idxFrom, buf));
-				print_literal(" ");
-				pc += sizeof(int);
-
-				int idxTo;
-				memcpy(&idxTo, pbc + pc, sizeof(int));
-				callback(buf, lang_tostringbufi(idxTo, buf));
-				pc += sizeof(int);
-				break;
-			}
 			case LANGV_OP_POPN:
 			{
 				print_literal("popn\t");
@@ -516,16 +439,16 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				pc += sizeof(int);
 				break;
 			}
-			case LANGV_OP_PUSHLCLOSURE:
+			case LANGV_OP_PUSHFUNCTION:
 			{
-				print_literal("pushlclosure\t");
+				print_literal("pushfunction\t");
 				pc++;
 
-				size_t pos;
-				memcpy(&pos, pbc + pc, sizeof(size_t));
+				int pos;
+				memcpy(&pos, pbc + pc, sizeof(int));
 				callback(buf, lang_tostringbufi(pos, buf));
 				print_literal(" ");
-				pc += sizeof(size_t);
+				pc += sizeof(int);
 
 				int nParam;
 				memcpy(&nParam, pbc + pc, sizeof(int));
@@ -584,6 +507,12 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				pc += sizeof(lang_number);
 				break;
 			}
+			case LANGV_OP_PUSHTHIS:
+			{
+				print_literal("pushthis\t");
+				pc++;
+				break;
+			}
 			case LANGV_OP_RETURN:
 			{
 				print_literal("return\t");
@@ -593,6 +522,20 @@ int langV_print(LangWriteCallback callback, const char *pbc, int len) {
 				memcpy(&nReturn, pbc + pc, sizeof(int));
 				callback(buf, lang_tostringbufi(nReturn, buf));
 				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_SETFIELD:
+			{
+				print_literal("setlocal\t");
+				pc++;
+
+				int strLen;
+				memcpy(&strLen, pbc + pc, sizeof(int));
+				pc += sizeof(int);
+
+				const char *str = pbc + pc;
+				print_string(str, strLen);
+				pc += strLen;
 				break;
 			}
 			case LANGV_OP_SETLOCAL:
