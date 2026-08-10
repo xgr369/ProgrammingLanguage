@@ -32,10 +32,11 @@ typedef struct {
 
 typedef struct {
 	List scopeContexts; // List<LangC_ScopeContext *>
-	char *msg;
+	const char *msg;
 } LangC_CompilerState;
 
-int langC_compile(char *src, LangP_AstNode *root, LangC_CompilerState *pcs, CharList *dst);
+int langC_init(LangC_CompilerState *pcs);
+int langC_compile(char *src, LangP_AstNode *root, LangC_CompilerState *pcs, char **dst, int *len);
 void langC_free(LangC_CompilerState *pcs);
 
 #endif // COMPILER_H
