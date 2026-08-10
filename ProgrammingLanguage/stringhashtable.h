@@ -16,7 +16,7 @@ typedef struct {
 	size_t size;
 } StringHashTable;
 
-int stringhashtable_new(StringHashTable *psht, size_t elemSize, size_t size);
+int stringhashtable_init(StringHashTable *psht, size_t elemSize, size_t size);
 int stringhashtable_free(StringHashTable *psht);
 int stringhashtable_containskey(StringHashTable *psht, const char *key);
 int stringhashtable_get(StringHashTable *psht, const char *key, void *dst);

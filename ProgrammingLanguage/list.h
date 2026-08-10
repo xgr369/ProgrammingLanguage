@@ -10,7 +10,7 @@ typedef struct {
 	size_t size;
 } List;
 
-int list_new(List *pv, size_t elemSize, size_t size);
+int list_init(List *pv, size_t elemSize, size_t size);
 int list_free(List *pv);
 void *list_at(List *pv, size_t index);
 int list_get(List *pv, size_t index, void *dst);

@@ -60,7 +60,7 @@ int stringhashtableentry_put(StringHashTableEntry *pshte, const char *key, const
 	return stringhashtableentry_put(pshte->next, key, src, elemSize);
 }
 
-int stringhashtable_new(StringHashTable *psht, size_t elemSize, size_t size) {
+int stringhashtable_init(StringHashTable *psht, size_t elemSize, size_t size) {
 	if (!psht || elemSize == 0)
 		return 1;
 	size_t entrySize = sizeof(StringHashTableEntry) + elemSize;

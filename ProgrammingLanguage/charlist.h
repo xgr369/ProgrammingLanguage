@@ -9,7 +9,7 @@ typedef struct {
 	size_t size;
 } CharList;
 
-int charlist_new(CharList *pcv, size_t size);
+int charlist_init(CharList *pcv, size_t size);
 int charlist_free(CharList *pcv);
 int charlist_get(CharList *pcv, size_t index, char *dst);
 int charlist_pop(CharList *pcv, char *dst);

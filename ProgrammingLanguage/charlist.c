@@ -11,7 +11,7 @@ int _charlist_resize(CharList *pcv, size_t addLen) {
 	return 0;
 }
 
-int charlist_new(CharList *pcv, size_t size) {
+int charlist_init(CharList *pcv, size_t size) {
 	if (!pcv)
 		return 1;
 	pcv->data = malloc(size);

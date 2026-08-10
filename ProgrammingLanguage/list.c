@@ -10,7 +10,7 @@ int _list_resize(List *pv) {
 	return 0;
 }
 
-int list_new(List *pv, size_t elemSize, size_t size) {
+int list_init(List *pv, size_t elemSize, size_t size) {
 	if (!pv || elemSize == 0)
 		return 1;
 	pv->data = malloc(size * elemSize);
