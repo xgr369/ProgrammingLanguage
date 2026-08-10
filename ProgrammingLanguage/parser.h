@@ -11,10 +11,10 @@
 #include "list.h"
 
 typedef struct {
-	char* src;
+	const char* src;
 	List *ptokens; // List<LangP_Token>
 	size_t pos;
-	char *msg;
+	const char *msg;
 } LangP_ParserState;
 
 typedef enum {
@@ -42,8 +42,10 @@ typedef enum {
 	LANGP_AST_NODE_CONTROL_FUNCTION,
 	LANGP_AST_NODE_CONTROL_IFELSEIF,
 	LANGP_AST_NODE_CONTROL_ELSE,
-	LANGP_AST_NODE_CONTROL_IMPORT,
-	LANGP_AST_NODE_CONTROL_RETURN,
+	LANGP_AST_NODE_DECLARATION,
+	LANGP_AST_NODE_IMPORT,
+	LANGP_AST_NODE_RETURN,
+	LANGP_AST_NODE_DEBUGGER,
 	LANGP_AST_NODE_EXPRLIST,
 	LANGP_AST_NODE_FIELDEXPR,
 	LANGP_AST_NODE_LEAF,
@@ -57,6 +59,11 @@ typedef struct {
 	LangP_AstNode *pvarlist;
 	LangP_AstNode *pexprlist;
 } LangP_AstAssignment;
+
+typedef struct {
+	LangP_AstNode *pidentifierlist;
+	LangP_AstNode *pexprlist;
+} LangP_AstDeclaration;
 
 typedef struct {
 	LangP_AstOperation op;
@@ -98,7 +105,7 @@ struct LangP_AstNode {
 	LangP_AstNodeType type;
 	union {
 		/*LEAF*/ LangP_Token *ptoken;
-		/*CONTROL_IMPORT: VARLIST, CONTROL_RETURN: EXPRLIST*/ LangP_AstNode *pnode;
+		/*IMPORT: VARLIST, RETURN: EXPRLIST*/ LangP_AstNode *pnode;
 		/*BINARYEXPR*/ LangP_AstBinaryExpression binaryExpression;
 		/*UNARYEXPR*/ LangP_AstUnaryExpression unaryExpression;
 		/*BLOCK,VARLIST,EXPRLIST*/ List nodes; // List<LangP_AstNode *>
@@ -108,10 +115,12 @@ struct LangP_AstNode {
 		/*CALL*/ LangP_AstCall call;
 		/*FIELDEXPR*/ LangP_AstFieldExpression fieldExpression;
 		/*ASSIGNMENT*/ LangP_AstAssignment assignment;
+		/*DECLARATION*/ LangP_AstDeclaration declaration;
+		/*DEBUGGER: empty*/
 	} value;
 };
 
-LangP_AstNode *langP_parse(char *src, List *ptokens, LangP_ParserState *pps);
+LangP_AstNode *langP_parse(const char *src, List *ptokens, LangP_ParserState *pps);
 void langP_free(LangP_AstNode *pnode);
 
 #endif // PARSER_H

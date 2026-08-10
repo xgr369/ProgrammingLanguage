@@ -13,7 +13,7 @@
 typedef struct {
     const char *src;
     size_t pos;
-    char *msg;
+    const char *msg;
 } LangP_LexerState;
 
 typedef enum {
@@ -25,12 +25,16 @@ typedef enum {
 } LangP_TokenType;
 
 typedef enum {
+    LANGP_TOK_KEYWORD_DEBUGGER,
     LANGP_TOK_KEYWORD_ELSE,
     LANGP_TOK_KEYWORD_ELSEIF,
     LANGP_TOK_KEYWORD_FUNCTION,
     LANGP_TOK_KEYWORD_IF,
     LANGP_TOK_KEYWORD_IMPORT,
+    LANGP_TOK_KEYWORD_NULL,
     LANGP_TOK_KEYWORD_RETURN,
+    LANGP_TOK_KEYWORD_THIS,
+    LANGP_TOK_KEYWORD_VAR,
     LANGP_TOK_OPERATOR_ASSIGN,
     LANGP_TOK_OPERATOR_EQ,
     LANGP_TOK_OPERATOR_NEQ,
@@ -65,7 +69,6 @@ typedef struct {
     } value;
 } LangP_Token;
 
-void langP_print_tok(FILE *stream, const char *src, LangP_Token *ptok);
-List langP_tokenize(char *src, LangP_LexerState *pls);
+List langP_tokenize(const char *src, LangP_LexerState *pls);
 
 #endif // LEXER_H
