@@ -9,14 +9,14 @@
 #include <stdio.h>
 #include <string.h>
 #include "conf.h"
-#include "lang.h"
+#include "core.h"
 
 typedef enum {
 	LANGV_OP_BINARYOP,
 	LANGV_OP_CALL,
 	LANGV_OP_CLOSEUPVALS,
 	LANGV_OP_DEBUGGER,
-	LANGV_OP_END,
+	LANGV_OP_EXPORT,
 	LANGV_OP_GETFIELD,
 	LANGV_OP_GETLOCAL,
 	LANGV_OP_GETUPVAL,
@@ -37,7 +37,7 @@ typedef enum {
 	LANGV_OP_UNARYOP,
 } LangV_Operation;
 
-LANG_API int langV_exec(LangState *L, const char *pbc, int len);
-LANG_API int langV_print(LangWriteCallback callback, const char *pbc, int len);
+LANG_API int langV_exec(LangState *L, const char *src, int stackFrameId);
+LANG_API int langV_print(const char *src, int len);
 
 #endif // VM_H
