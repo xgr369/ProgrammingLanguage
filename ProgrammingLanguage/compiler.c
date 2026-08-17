@@ -1,72 +1,72 @@
 #include "compiler.h"
 #include "vm.h"
 
-static inline langC_emitop(CharList *pbc, char c) {
-	charlist_push(pbc, c);
+static inline emitop(LangM_CharList *pbc, char c) {
+	langM_charlist_push(pbc, c);
 }
-#define langC_emitchar(pbc, c) (charlist_push(dst, c))
-#define langC_emitbyte(pbc, c) (charlist_push(pbc, c))
-#define langC_emitliteral(pbc, l) (charlist_pusharray(pbc, "" l, sizeof(l) - 1))
-static inline langC_emitdouble(CharList *pbc, double d) {
-	charlist_pusharray(pbc, &d, sizeof(double));
+#define emitchar(pbc, c) (langM_charlist_push(dst, c))
+#define emitbyte(pbc, c) (langM_charlist_push(pbc, c))
+#define emitliteral(pbc, l) (langM_charlist_pusharray(pbc, "" l, sizeof(l) - 1))
+static inline emitdouble(LangM_CharList *pbc, double d) {
+	langM_charlist_pusharray(pbc, &d, sizeof(double));
 }
-static inline langC_emitinteger(CharList *pbc, int i) {
-	charlist_pusharray(pbc, &i, sizeof(int));
+static inline emitinteger(LangM_CharList *pbc, int i) {
+	langM_charlist_pusharray(pbc, &i, sizeof(int));
 }
-static inline langC_writeinteger(CharList *pbc, int index, int i) {
-	charlist_setarray(pbc, index, &i, sizeof(int));
+static inline writeinteger(LangM_CharList *pbc, int index, int i) {
+	langM_charlist_setarray(pbc, index, &i, sizeof(int));
 }
-static inline langC_emitlstring(CharList *pbc, const const char *src, int l) {
-	charlist_pusharray(pbc, &l, sizeof(int));
-	charlist_pusharray(pbc, src, l);
+static inline emitlstring(LangM_CharList *pbc, int l, const const char *src) {
+	langM_charlist_pusharray(pbc, &l, sizeof(int));
+	langM_charlist_pusharray(pbc, src, l);
 }
 #define langC_errmsg(pcs, _msg) (pcs->msg = _msg)
 
-int push_scope_context(LangC_CompilerState *pcs, size_t stackSize, LangC_ScopeType type) {
+static int push_scope_context(LangC_CompilerState *pcs, size_t stackSize, LangC_ScopeType type) {
 	LangC_ScopeContext *psc = malloc(sizeof(LangC_ScopeContext));
 	if (!psc) {
 		langC_errmsg(pcs, "allocation failed");
 		return 1;
 	}
-	if (stringhashtable_init(&psc->identifierTable, sizeof(int), 10)) {
+	if (langM_hash_init(&psc->identifierTable, sizeof(int), 10)) {
 		langC_errmsg(pcs, "internal error");
 		return 1;
 	}
 	psc->stackSize = stackSize;
 	psc->type = type;
-	if (stringhashtable_init(&psc->upvalTable, sizeof(int), 10)) {
+	if (langM_hash_init(&psc->upvalTable, sizeof(int), 10)) {
 		langC_errmsg(pcs, "internal error");
 		return 1;
 	}
-	if (list_init(&psc->upvals, sizeof(LangC_UpvalDesc), 10)) {
+	if (langM_list_init(&psc->upvals, sizeof(LangC_UpvalDesc), 10)) {
 		langC_errmsg(pcs, "internal error");
 		return 1;
 	}
 	psc->hasCapturedVariables = 0;
-	if (list_push(&pcs->scopeContexts, &psc)) {
+	if (langM_list_push(&pcs->scopeContexts, &psc)) {
 		langC_errmsg(pcs, "internal error");
 		return 1;
 	}
 	return 0;
 }
 
-void free_scope_context(LangC_ScopeContext *psc) {
-	stringhashtable_free(&psc->identifierTable);
-	stringhashtable_free(&psc->upvalTable);
-	list_free(&psc->upvals);
+static void free_scope_context(LangC_ScopeContext *psc) {
+	langM_hash_free(&psc->identifierTable);
+	langM_hash_free(&psc->upvalTable);
+	langM_list_free(&psc->upvals);
 }
 
-void pop_scope_context(LangC_CompilerState *pcs) {
+static void pop_scope_context(LangC_CompilerState *pcs) {
 	LangC_ScopeContext *psc;
-	list_pop(&pcs->scopeContexts, &psc);
+	langM_list_pop(&pcs->scopeContexts, &psc);
 	free_scope_context(psc);
 }
 
-int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst);
+static int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst);
 
-int compile_call(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst, int nReturn) {
+static int compile_call(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst, int nReturn) {
 	LangC_ScopeContext *psc;
-	list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &psc);
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &psc);
 	int sizeB = psc->stackSize;
 	if (compile_expr(src, pnode->value.call.pexpr, pcs, dst)) {
 		return 1;
@@ -75,48 +75,43 @@ int compile_call(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs
 	int nArg = parglist->value.nodes.length;
 	for (int i = 0; i < nArg; i++) {
 		LangP_AstNode *pArg;
-		list_get(&parglist->value.nodes, i, &pArg);
+		langM_list_get(&parglist->value.nodes, i, &pArg);
 		if (compile_expr(src, pArg, pcs, dst)) {
 			return 1;
 		}
 	}
-	langC_emitop(dst, LANGV_OP_CALL);
-	langC_emitinteger(dst, nArg);
-	langC_emitinteger(dst, nReturn);
+	emitop(dst, LANGV_OP_CALL);
+	emitinteger(dst, nArg);
+	emitinteger(dst, nReturn);
 	psc->stackSize = sizeB + nReturn;
 	return 0;
 }
 
-int compile_binaryop(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst, char op) {
+static int compile_binaryop(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst, char op) {
 	LangC_ScopeContext *psc;
-	list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &psc);
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &psc);
 	if (compile_expr(src, pnode->value.binaryExpression.pleft, pcs, dst)) {
 		return 1;
 	}
-	LangP_AstNode *pright = pnode->value.binaryExpression.pright;
-	if (0 && pright->type == LANGP_AST_NODE_LEAF && pright->value.ptoken->type == LANGP_TOK_NUMBER) {
-		// TODO: LANGV_OP_BINARYOPI
-	} else {
-		if (compile_expr(src, pright, pcs, dst)) {
-			return 1;
-		}
-		langC_emitop(dst, LANGV_OP_BINARYOP);
-		langC_emitbyte(dst, op);
-		psc->stackSize--;
+	if (compile_expr(src, pnode->value.binaryExpression.pright, pcs, dst)) {
+		return 1;
 	}
+	emitop(dst, LANGV_OP_BINARYOP);
+	emitbyte(dst, op);
+	psc->stackSize--;
 	return 0;
 }
 
-int compile_unaryop(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst, char op) {
+static int compile_unaryop(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst, char op) {
 	if (compile_expr(src, pnode->value.binaryExpression.pleft, pcs, dst)) {
 		return 1;
 	}
-	langC_emitop(dst, LANGV_OP_UNARYOP);
-	langC_emitbyte(dst, op);
+	emitop(dst, LANGV_OP_UNARYOP);
+	emitbyte(dst, op);
 	return 0;
 }
 
-int compile_fieldexpr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst, int ignoreOutermost) {
+static int compile_fieldexpr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst, int ignoreOutermost) {
 	LangP_AstNode *pparent = pnode->value.fieldExpression.pparent;
 	if (pparent->type == LANGP_AST_NODE_FIELDEXPR) {
 		if (compile_fieldexpr(src, pparent, pcs, dst, 0)) {
@@ -129,43 +124,77 @@ int compile_fieldexpr(const char *src, LangP_AstNode *pnode, LangC_CompilerState
 	}
 	if (!ignoreOutermost) {
 		LangP_Token *ptok = pnode->value.fieldExpression.pchild->value.ptoken;
-		langC_emitop(dst, LANGV_OP_GETFIELD);
-		langC_emitlstring(dst, src + ptok->value.string.index, ptok->value.string.length);
+		emitop(dst, LANGV_OP_GETFIELD);
+		emitlstring(dst, ptok->value.string.length, src + ptok->value.string.index);
 	}
 }
 
-int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst) {
+int compile_string(const char *src, LangP_Token *ptok, LangC_CompilerState *pcs, LangM_CharList *dst) {
+	LangC_ScopeContext *pscCurr;
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscCurr);
+	int maxLen = ptok->value.string.length;
+	char *buf = malloc(maxLen + 1);
+	if (!buf) {
+		langC_errmsg(pcs, "allocation failed");
+		return 1;
+	}
+	int len = 0;
+	int escape = 0;
+	for (int i = 0; i < maxLen; i++) {
+		char c = src[ptok->value.string.index + i];
+		if (escape) {
+			escape = 0;
+			switch (c) {
+				case '0':
+					c = '\0';
+					break;
+				case '\\':
+					break;
+				default:
+					langC_errmsg(pcs, "unrecognized escape sequence");
+					free(buf);
+					return 1;
+			}
+		} else if (c == '\\') {
+			escape = 1;
+			continue;
+		}
+		buf[len++] = c;
+	}
+	emitop(dst, LANGV_OP_PUSHLSTRING);
+	emitlstring(dst, len, buf);
+	pscCurr->stackSize++;
+	free(buf);
+	return 0;
+}
+
+static int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst) {
 	switch (pnode->type) {
-		case LANGP_AST_NODE_LEAF:
-		{
+		case LANGP_AST_NODE_LEAF: {
 			LangC_ScopeContext *pscCurr;
-			list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscCurr);
+			langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscCurr);
 			LangP_Token *ptok = pnode->value.ptoken;
 			switch (ptok->type) {
-				case LANGP_TOK_KEYWORD:
-				{
+				case LANGP_TOK_KEYWORD: {
 					if (ptok->value.tag == LANGP_TOK_KEYWORD_NULL) {
-						langC_emitop(dst, LANGV_OP_PUSHNULL);
+						emitop(dst, LANGV_OP_PUSHNULL);
 						pscCurr->stackSize++;
 					} else if (ptok->value.tag == LANGP_TOK_KEYWORD_THIS) {
-						langC_emitop(dst, LANGV_OP_PUSHTHIS);
+						emitop(dst, LANGV_OP_PUSHTHIS);
 						pscCurr->stackSize++;
 					}
 				} break;
-				case LANGP_TOK_NUMBER:
-				{
-					langC_emitop(dst, LANGV_OP_PUSHNUMBER);
-					langC_emitdouble(dst, ptok->value.number);
+				case LANGP_TOK_NUMBER: {
+					emitop(dst, LANGV_OP_PUSHNUMBER);
+					emitdouble(dst, ptok->value.number);
 					pscCurr->stackSize++;
 				} break;
-				case LANGP_TOK_STRING:
-				{
-					langC_emitop(dst, LANGV_OP_PUSHLSTRING);
-					langC_emitlstring(dst, src + ptok->value.string.index, ptok->value.string.length);
-					pscCurr->stackSize++;
+				case LANGP_TOK_STRING: {
+					if (compile_string(src, ptok, pcs, dst)) {
+						return 1;
+					}
 				} break;
-				case LANGP_TOK_IDENTIFIER:
-				{
+				case LANGP_TOK_IDENTIFIER: {
 					int len = ptok->value.string.length;
 					char *identifier = malloc(len + 1);
 					if (!identifier) {
@@ -178,44 +207,45 @@ int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs
 					int isLocal = 1;
 					for (int depth = pcs->scopeContexts.length - 1;; depth--) {
 						LangC_ScopeContext *pscOther;
-						list_get(&pcs->scopeContexts, depth, &pscOther);
-						int isDefined = stringhashtable_containskey(&pscOther->identifierTable, identifier) == 0;
+						langM_list_get(&pcs->scopeContexts, depth, &pscOther);
+						int isDefined = langM_hash_containskey(&pscOther->identifierTable, identifier) == 0;
 						if (isDefined) {
 							if (isLocal) {
 								int idxLocal;
-								stringhashtable_get(&pscOther->identifierTable, identifier, &idxLocal);
-								langC_emitop(dst, LANGV_OP_GETLOCAL);
-								langC_emitinteger(dst, idxLocal);
+								langM_hash_get(&pscOther->identifierTable, identifier, &idxLocal);
+								emitop(dst, LANGV_OP_GETLOCAL);
+								emitinteger(dst, idxLocal);
 								pscCurr->stackSize++;
 							} else {
 								int idxUpval;
-								if (stringhashtable_get(&pscCurr->upvalTable, identifier, &idxUpval) == 1) {
+								if (langM_hash_get(&pscCurr->upvalTable, identifier, &idxUpval) == 1) {
 									int idxScopeContextInner = pcs->scopeContexts.length - 1;
 									for (;; idxScopeContextInner--) {
 										LangC_ScopeContext *pscOther;
-										list_get(&pcs->scopeContexts, idxScopeContextInner, &pscOther);
+										langM_list_get(&pcs->scopeContexts, idxScopeContextInner, &pscOther);
 										if (pscOther->type == LANGC_SCOPE_TYPE_FUNCTION) {
 											break;
 										}
 									}
+									int innermost = 1;
 									for (;;) {
 										int idxScopeContextOuter = idxScopeContextInner - 1;
 										for (;; idxScopeContextOuter--) {
 											LangC_ScopeContext *pscOther;
-											list_get(&pcs->scopeContexts, idxScopeContextOuter, &pscOther);
+											langM_list_get(&pcs->scopeContexts, idxScopeContextOuter, &pscOther);
 											if (pscOther->type == LANGC_SCOPE_TYPE_FUNCTION) {
 												break;
 											}
 										}
 										// Record upval
 										LangC_ScopeContext *pscInner;
-										list_get(&pcs->scopeContexts, idxScopeContextInner, &pscInner);
+										langM_list_get(&pcs->scopeContexts, idxScopeContextInner, &pscInner);
 										LangC_ScopeContext *pscOuter;
-										list_get(&pcs->scopeContexts, idxScopeContextOuter, &pscOuter);
+										langM_list_get(&pcs->scopeContexts, idxScopeContextOuter, &pscOuter);
 										LangC_UpvalDesc ud;
 										int idxUpvalOuter;
 										int terminate;
-										if (stringhashtable_get(&pscOuter->upvalTable, identifier, &idxUpvalOuter) == 0) {
+										if (langM_hash_get(&pscOuter->upvalTable, identifier, &idxUpvalOuter) == 0) {
 											// OLD, terminate -- already recorded in pscOuter
 											ud.type = LANG_UPVAL_INDIRECT;
 											ud.index = idxUpvalOuter;
@@ -223,9 +253,9 @@ int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs
 										} else if (idxScopeContextOuter <= depth) {
 											// NEW, terminate
 											LangC_ScopeContext *pscUpval;
-											list_get(&pcs->scopeContexts, depth, &pscUpval);
+											langM_list_get(&pcs->scopeContexts, depth, &pscUpval);
 											ud.type = LANG_UPVAL_DIRECT;
-											stringhashtable_get(&pscUpval->identifierTable, identifier, &ud.index);
+											langM_hash_get(&pscUpval->identifierTable, identifier, &ud.index);
 											terminate = 1;
 											pscUpval->hasCapturedVariables = 1;
 										} else {
@@ -236,18 +266,20 @@ int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs
 											terminate = 0;
 										}
 										int idxUpvalInner = pscInner->upvals.length;
-										stringhashtable_put(&pscInner->upvalTable, identifier, &idxUpvalInner);
-										list_push(&pscInner->upvals, &ud);
-
+										langM_hash_put(&pscInner->upvalTable, identifier, &idxUpvalInner);
+										langM_list_push(&pscInner->upvals, &ud);
+										if (innermost) {
+											langM_hash_get(&pscInner->upvalTable, identifier, &idxUpval);
+										}
 										if (terminate) {
 											break;
 										}
 										idxScopeContextInner = idxScopeContextOuter;
+										innermost = 0;
 									}
-									stringhashtable_get(&pscCurr->upvalTable, identifier, &idxUpval);
 								}
-								langC_emitop(dst, LANGV_OP_GETUPVAL);
-								langC_emitinteger(dst, idxUpval);
+								emitop(dst, LANGV_OP_GETUPVAL);
+								emitinteger(dst, idxUpval);
 								pscCurr->stackSize++;
 							}
 							break;
@@ -266,8 +298,7 @@ int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs
 				} break;
 			}
 		} break;
-		case LANGP_AST_NODE_BINARYEXPR:
-		{
+		case LANGP_AST_NODE_BINARYEXPR: {
 			switch (pnode->value.binaryExpression.op) {
 				case LANGP_AST_OP_ADD:
 					return compile_binaryop(src, pnode, pcs, dst, LANG_OP_ADD);
@@ -292,42 +323,23 @@ int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs
 					return 1;
 			}
 		} break;
-		case LANGP_AST_NODE_UNARYEXPR:
-		{
-			switch (pnode->value.unaryExpression.op) {
-				case LANGP_AST_OP_NEG:
-					compile_unaryop(src, pnode, pcs, dst, LANG_OP_NEG);
-					break;
-				case LANGP_AST_OP_NOT:
-					compile_unaryop(src, pnode, pcs, dst, LANG_OP_NOT);
-					break;
-				case LANGP_AST_OP_LEN:
-					compile_unaryop(src, pnode, pcs, dst, LANG_OP_LEN);
-					break;
-				default:
-					assert(0);
-					return 1;
-			}
-		} break;
-		case LANGP_AST_NODE_CALL:
-		{
+		case LANGP_AST_NODE_CALL: {
 			if (compile_call(src, pnode, pcs, dst, 1)) {
 				return 1;
 			}
 		} break;
-		case LANGP_AST_NODE_CONTROL_FUNCTION:
-		{
-			langC_emitop(dst, LANGV_OP_JMP);
-			langC_emitinteger(dst, 1); // PLACEHOLDER
+		case LANGP_AST_NODE_CONTROL_FUNCTION: {
+			emitop(dst, LANGV_OP_JMP);
+			emitinteger(dst, 1); // PLACEHOLDER
 
 			int blockStart = dst->length;
 			push_scope_context(pcs, 0, LANGC_SCOPE_TYPE_FUNCTION);
 			LangC_ScopeContext *pscInner;
-			list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscInner);
+			langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscInner);
 			int nParam = pnode->value.controlFunction.pparamlist->value.nodes.length;
 			for (int i = 0; i < nParam; i++) {
 				LangP_AstNode *pvar;
-				list_get(&pnode->value.controlFunction.pparamlist->value.nodes, i, &pvar);
+				langM_list_get(&pnode->value.controlFunction.pparamlist->value.nodes, i, &pvar);
 				LangP_Token *ptok = pvar->value.ptoken;
 				int len = ptok->value.string.length;
 				char *identifier = malloc(len + 1);
@@ -338,7 +350,7 @@ int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs
 				}
 				memcpy(identifier, src + ptok->value.string.index, len);
 				identifier[len] = '\0';
-				stringhashtable_put(&pscInner->identifierTable, identifier, &i);
+				langM_hash_put(&pscInner->identifierTable, identifier, &i);
 				free(identifier);
 			}
 			pscInner->stackSize = nParam;
@@ -349,33 +361,46 @@ int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs
 			int emitEnd = 1;
 			if (pblock->value.nodes.length > 0) {
 				LangP_AstNode *last;
-				list_get(&pblock->value.nodes, pblock->value.nodes.length - 1, &last);
+				langM_list_get(&pblock->value.nodes, pblock->value.nodes.length - 1, &last);
 				emitEnd = last->type != LANGP_AST_NODE_RETURN;
 			}
 			if (emitEnd) {
-				langC_emitop(dst, LANGV_OP_END);
+				emitop(dst, LANGV_OP_RETURN);
+				emitinteger(dst, 0);
 			}
-			langC_writeinteger(dst, blockStart - sizeof(int), dst->length - blockStart);
+			writeinteger(dst, blockStart - sizeof(int), dst->length - blockStart);
 
-			langC_emitop(dst, LANGV_OP_PUSHFUNCTION);
-			langC_emitinteger(dst, blockStart);
-			langC_emitinteger(dst, nParam);
-			langC_emitinteger(dst, pscInner->upvals.length);
+			emitop(dst, LANGV_OP_PUSHFUNCTION);
+			emitinteger(dst, blockStart);
+			emitinteger(dst, nParam);
+			emitinteger(dst, pscInner->upvals.length);
 			for (int i = 0; i < pscInner->upvals.length; i++) {
-				LangC_UpvalDesc *pud = list_at(&pscInner->upvals, i);
-				langC_emitbyte(dst, pud->type);
-				langC_emitinteger(dst, pud->index);
+				LangC_UpvalDesc *pud = langM_list_at(&pscInner->upvals, i);
+				emitbyte(dst, pud->type);
+				emitinteger(dst, pud->index);
 			}
 			pop_scope_context(pcs);
 
 			LangC_ScopeContext *pscOuter;
-			list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscOuter);
+			langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscOuter);
 			pscOuter->stackSize++;
 		} break;
-		case LANGP_AST_NODE_FIELDEXPR:
-		{
+		case LANGP_AST_NODE_FIELDEXPR: {
 			if (compile_fieldexpr(src, pnode, pcs, dst, 0)) {
 				return 1;
+			}
+		} break;
+		case LANGP_AST_NODE_UNARYEXPR: {
+			switch (pnode->value.unaryExpression.op) {
+				case LANGP_AST_OP_NEG:
+					return compile_unaryop(src, pnode, pcs, dst, LANG_OP_NEG);
+				case LANGP_AST_OP_NOT:
+					return compile_unaryop(src, pnode, pcs, dst, LANG_OP_NOT);
+				case LANGP_AST_OP_LEN:
+					return compile_unaryop(src, pnode, pcs, dst, LANG_OP_LEN);
+				default:
+					assert(0);
+					return 1;
 			}
 		} break;
 		default:
@@ -385,17 +410,17 @@ int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs
 	return 0;
 }
 
-int compile_declaration(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst) {
+static int compile_declaration(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst) {
 	LangP_AstNode *pidentifierlist = pnode->value.declaration.pidentifierlist;
 	LangP_AstNode *pexprlist = pnode->value.declaration.pexprlist;
 	LangC_ScopeContext *pscCurr;
-	list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscCurr);
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscCurr);
 	int nVar = pidentifierlist->value.nodes.length;
 	int nExpr = pexprlist->value.nodes.length;
 	int sizeB = pscCurr->stackSize;
 
 	LangP_AstNode *pexpr;
-	list_get(&pexprlist->value.nodes, 0, &pexpr);
+	langM_list_get(&pexprlist->value.nodes, 0, &pexpr);
 	if (nExpr == 1 && pexpr->type == LANGP_AST_NODE_CALL) {
 		if (compile_expr(src, pexpr->value.call.pexpr, pcs, dst)) {
 			return 1;
@@ -404,20 +429,20 @@ int compile_declaration(const char *src, LangP_AstNode *pnode, LangC_CompilerSta
 		int nArg = parglist->value.nodes.length;
 		for (int i = 0; i < nArg; i++) {
 			LangP_AstNode *parg;
-			list_get(&parglist->value.nodes, i, &parg);
+			langM_list_get(&parglist->value.nodes, i, &parg);
 			if (compile_expr(src, parg, pcs, dst)) {
 				return 1;
 			}
 		}
-		langC_emitop(dst, LANGV_OP_CALL);
-		langC_emitinteger(dst, nArg);
-		langC_emitinteger(dst, nVar);
+		emitop(dst, LANGV_OP_CALL);
+		emitinteger(dst, nArg);
+		emitinteger(dst, nVar);
 		pscCurr->stackSize = sizeB + nVar;
 	} else {
 		for (int i = 0; i < nVar; i++) {
 			LangP_AstNode *pexpr;
-			if (list_get(&pexprlist->value.nodes, i, &pexpr)) {
-				langC_emitop(dst, LANGV_OP_PUSHNULL);
+			if (langM_list_get(&pexprlist->value.nodes, i, &pexpr)) {
+				emitop(dst, LANGV_OP_PUSHNULL);
 				pscCurr->stackSize++;
 			} else {
 				if (compile_expr(src, pexpr, pcs, dst)) {
@@ -429,7 +454,7 @@ int compile_declaration(const char *src, LangP_AstNode *pnode, LangC_CompilerSta
 
 	for (int i = 0; i < nVar; i++) {
 		LangP_AstNode *pvar;
-		list_get(&pidentifierlist->value.nodes, i, &pvar);
+		langM_list_get(&pidentifierlist->value.nodes, i, &pvar);
 		LangP_Token *ptok = pvar->value.ptoken;
 		int len = ptok->value.string.length;
 		char *identifier = malloc(len + 1);
@@ -441,24 +466,24 @@ int compile_declaration(const char *src, LangP_AstNode *pnode, LangC_CompilerSta
 		identifier[len] = '\0';
 
 		int idxLocal = sizeB + i;
-		stringhashtable_put(&pscCurr->identifierTable, identifier, &idxLocal);
+		langM_hash_put(&pscCurr->identifierTable, identifier, &idxLocal);
 
 		free(identifier);
 	}
 	return 0;
 }
 
-int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst) {
+static int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst) {
 	LangP_AstNode *pvarlist = pnode->value.assignment.pvarlist;
 	LangP_AstNode *pexprlist = pnode->value.assignment.pexprlist;
 	LangC_ScopeContext *pscCurr;
-	list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscCurr);
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscCurr);
 	int nVar = pvarlist->value.nodes.length;
 	int nExpr = pexprlist->value.nodes.length;
 	int sizeB = pscCurr->stackSize;
 
 	LangP_AstNode *pexpr;
-	list_get(&pexprlist->value.nodes, 0, &pexpr);
+	langM_list_get(&pexprlist->value.nodes, 0, &pexpr);
 	if (nExpr == 1 && pexpr->type == LANGP_AST_NODE_CALL) {
 		if (compile_expr(src, pexpr->value.call.pexpr, pcs, dst)) {
 			return 1;
@@ -467,20 +492,20 @@ int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_CompilerStat
 		int nArg = parglist->value.nodes.length;
 		for (int i = 0; i < nArg; i++) {
 			LangP_AstNode *parg;
-			list_get(&parglist->value.nodes, i, &parg);
+			langM_list_get(&parglist->value.nodes, i, &parg);
 			if (compile_expr(src, parg, pcs, dst)) {
 				return 1;
 			}
 		}
-		langC_emitop(dst, LANGV_OP_CALL);
-		langC_emitinteger(dst, nArg);
-		langC_emitinteger(dst, nVar);
+		emitop(dst, LANGV_OP_CALL);
+		emitinteger(dst, nArg);
+		emitinteger(dst, nVar);
 		pscCurr->stackSize = sizeB + nVar;
 	} else {
 		for (int i = 0; i < nVar; i++) {
 			LangP_AstNode *pexpr;
-			if (list_get(&pexprlist->value.nodes, i, &pexpr)) {
-				langC_emitop(dst, LANGV_OP_PUSHNULL);
+			if (langM_list_get(&pexprlist->value.nodes, i, &pexpr)) {
+				emitop(dst, LANGV_OP_PUSHNULL);
 				pscCurr->stackSize++;
 			} else {
 				if (compile_expr(src, pexpr, pcs, dst)) {
@@ -494,7 +519,7 @@ int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_CompilerStat
 	int i = nVar - 1;
 	for (;;) {
 		LangP_AstNode *pvar;
-		list_get(&pvarlist->value.nodes, i, &pvar);
+		langM_list_get(&pvarlist->value.nodes, i, &pvar);
 		if (pvar->type == LANGP_AST_NODE_LEAF) {
 			LangP_Token *ptok = pvar->value.ptoken;
 			int len = ptok->value.string.length;
@@ -509,44 +534,45 @@ int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_CompilerStat
 			int isLocal = 1;
 			for (int depth = pcs->scopeContexts.length - 1;; depth--) {
 				LangC_ScopeContext *pscOther;
-				list_get(&pcs->scopeContexts, depth, &pscOther);
-				int isDefined = stringhashtable_containskey(&pscOther->identifierTable, identifier) == 0;
+				langM_list_get(&pcs->scopeContexts, depth, &pscOther);
+				int isDefined = langM_hash_containskey(&pscOther->identifierTable, identifier) == 0;
 				if (isDefined) {
 					if (isLocal) {
 						int idxLocal;
-						stringhashtable_get(&pscOther->identifierTable, identifier, &idxLocal);
-						langC_emitop(dst, LANGV_OP_SETLOCAL);
-						langC_emitinteger(dst, idxLocal);
+						langM_hash_get(&pscOther->identifierTable, identifier, &idxLocal);
+						emitop(dst, LANGV_OP_SETLOCAL);
+						emitinteger(dst, idxLocal);
 						pscCurr->stackSize--;
 					} else {
 						int idxUpval;
-						if (stringhashtable_get(&pscCurr->upvalTable, identifier, &idxUpval) == 1) {
+						if (langM_hash_get(&pscCurr->upvalTable, identifier, &idxUpval) == 1) {
 							int depthInner = pcs->scopeContexts.length - 1;
 							for (;; depthInner--) {
 								LangC_ScopeContext *pscOther;
-								list_get(&pcs->scopeContexts, depthInner, &pscOther);
+								langM_list_get(&pcs->scopeContexts, depthInner, &pscOther);
 								if (pscOther->type == LANGC_SCOPE_TYPE_FUNCTION) {
 									break;
 								}
 							}
+							int innermost = 1;
 							for (;;) {
 								int depthOuter = depthInner - 1;
 								for (;; depthOuter--) {
 									LangC_ScopeContext *pscOther;
-									list_get(&pcs->scopeContexts, depthOuter, &pscOther);
+									langM_list_get(&pcs->scopeContexts, depthOuter, &pscOther);
 									if (pscOther->type == LANGC_SCOPE_TYPE_FUNCTION) {
 										break;
 									}
 								}
 								// Record upval
 								LangC_ScopeContext *pscInner;
-								list_get(&pcs->scopeContexts, depthInner, &pscInner);
+								langM_list_get(&pcs->scopeContexts, depthInner, &pscInner);
 								LangC_ScopeContext *pscOuter;
-								list_get(&pcs->scopeContexts, depthOuter, &pscOuter);
+								langM_list_get(&pcs->scopeContexts, depthOuter, &pscOuter);
 								LangC_UpvalDesc ud;
 								int idxUpvalOuter;
 								int terminate;
-								if (stringhashtable_get(&pscOuter->upvalTable, identifier, &idxUpvalOuter) == 0) {
+								if (langM_hash_get(&pscOuter->upvalTable, identifier, &idxUpvalOuter) == 0) {
 									// OLD, terminate
 									ud.type = LANG_UPVAL_INDIRECT;
 									ud.index = idxUpvalOuter;
@@ -554,9 +580,9 @@ int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_CompilerStat
 								} else if (depthOuter <= depth) {
 									// NEW, terminate
 									LangC_ScopeContext *pscUpval;
-									list_get(&pcs->scopeContexts, depth, &pscUpval);
+									langM_list_get(&pcs->scopeContexts, depth, &pscUpval);
 									ud.type = LANG_UPVAL_DIRECT;
-									stringhashtable_get(&pscUpval->identifierTable, identifier, &ud.index);
+									langM_hash_get(&pscUpval->identifierTable, identifier, &ud.index);
 									terminate = 1;
 									pscUpval->hasCapturedVariables = 1;
 								} else {
@@ -567,17 +593,20 @@ int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_CompilerStat
 									terminate = 0;
 								}
 								int idxUpvalInner = pscInner->upvals.length;
-								stringhashtable_put(&pscInner->upvalTable, identifier, &idxUpvalInner);
-								list_push(&pscInner->upvals, &ud);
+								langM_hash_put(&pscInner->upvalTable, identifier, &idxUpvalInner);
+								langM_list_push(&pscInner->upvals, &ud);
+								if (innermost) {
+									langM_hash_get(&pscInner->upvalTable, identifier, &idxUpval);
+								}
 								if (terminate) {
 									break;
 								}
 								depthInner = depthOuter;
+								innermost = 0;
 							}
-							stringhashtable_get(&pscCurr->upvalTable, identifier, &idxUpval);
 						}
-						langC_emitop(dst, LANGV_OP_SETUPVAL);
-						langC_emitinteger(dst, idxUpval);
+						emitop(dst, LANGV_OP_SETUPVAL);
+						emitinteger(dst, idxUpval);
 						pscCurr->stackSize--;
 					}
 					break;
@@ -597,8 +626,8 @@ int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_CompilerStat
 				return 1;
 			}
 			LangP_Token *ptok = pvar->value.fieldExpression.pchild->value.ptoken;
-			langC_emitop(dst, LANGV_OP_SETFIELD);
-			langC_emitlstring(dst, src + ptok->value.string.index, ptok->value.string.length);
+			emitop(dst, LANGV_OP_SETFIELD);
+			emitlstring(dst, src + ptok->value.string.index, ptok->value.string.length);
 			pscCurr->stackSize--;
 		}
 		if (i == 0) {
@@ -609,9 +638,9 @@ int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_CompilerStat
 	return 0;
 }
 
-int compile_statement_else(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst) {
+static int compile_control_else(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst) {
 	LangC_ScopeContext *pscOuter;
-	list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscOuter);
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscOuter);
 	if (push_scope_context(pcs, pscOuter->stackSize, LANGC_SCOPE_TYPE_NORMAL)) {
 		return 1;
 	}
@@ -620,30 +649,29 @@ int compile_statement_else(const char *src, LangP_AstNode *pnode, LangC_Compiler
 	}
 
 	LangC_ScopeContext *pscInner;
-	list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscInner);
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscInner);
 	if (pscInner->hasCapturedVariables) {
-		langC_emitop(dst, LANGV_OP_CLOSEUPVALS);
-		langC_emitinteger(dst, pscOuter->stackSize);
+		emitop(dst, LANGV_OP_CLOSEUPVALS);
+		emitinteger(dst, pscOuter->stackSize);
 	}
 	if (pscInner->stackSize != pscOuter->stackSize) {
-		langC_emitop(dst, LANGV_OP_POPN);
-		langC_emitinteger(dst, pscInner->stackSize - pscOuter->stackSize);
+		emitop(dst, LANGV_OP_POPN);
+		emitinteger(dst, pscInner->stackSize - pscOuter->stackSize);
 	}
 	pop_scope_context(pcs);
 	return 0;
 }
 
-int compile_statement_ifelseif(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst) {
+static int compile_control_ifelseif(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst) {
 	if (compile_expr(src, pnode->value.controlIfElseif.pexpr, pcs, dst)) {
 		return 1;
 	}
 	LangC_ScopeContext *pscOuter;
-	list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscOuter);
-	langC_emitop(dst, LANGV_OP_JMPZ);
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscOuter);
+	emitop(dst, LANGV_OP_JMPZ);
 	int pcJmpnzWrite = dst->length;
-	langC_emitinteger(dst, 1); // PLACEHOLDER
+	emitinteger(dst, 1); // PLACEHOLDER
 	pscOuter->stackSize--;
-
 	int pcJmpnzFrom = dst->length;
 
 	if (push_scope_context(pcs, pscOuter->stackSize, LANGC_SCOPE_TYPE_NORMAL)) {
@@ -652,43 +680,81 @@ int compile_statement_ifelseif(const char *src, LangP_AstNode *pnode, LangC_Comp
 	if (compile_block(src, pnode->value.controlIfElseif.pblock, pcs, dst)) {
 		return 1;
 	}
-
 	LangC_ScopeContext *pscInner;
-	list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscInner);
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscInner);
 	if (pscInner->hasCapturedVariables) {
-		langC_emitop(dst, LANGV_OP_CLOSEUPVALS);
-		langC_emitinteger(dst, pscOuter->stackSize);
+		emitop(dst, LANGV_OP_CLOSEUPVALS);
+		emitinteger(dst, pscOuter->stackSize);
 	}
 	if (pscInner->stackSize != pscOuter->stackSize) {
-		langC_emitop(dst, LANGV_OP_POPN);
-		langC_emitinteger(dst, pscInner->stackSize - pscOuter->stackSize);
+		emitop(dst, LANGV_OP_POPN);
+		emitinteger(dst, pscInner->stackSize - pscOuter->stackSize);
 	}
 	pop_scope_context(pcs);
 
 	LangP_AstNode *pnext = pnode->value.controlIfElseif.pnext;
 	if (pnext != NULL) {
-		langC_emitop(dst, LANGV_OP_JMP);
+		emitop(dst, LANGV_OP_JMP);
 		int pcJmpWrite = dst->length;
-		langC_emitinteger(dst, 1); // PLACEHOLDER
+		emitinteger(dst, 1); // PLACEHOLDER
 		int pcJmpFrom = dst->length;
-		langC_writeinteger(dst, pcJmpnzWrite, dst->length - pcJmpnzFrom);
+		writeinteger(dst, pcJmpnzWrite, dst->length - pcJmpnzFrom);
 		if (pnext->type == LANGP_AST_NODE_CONTROL_ELSE) {
-			if (compile_statement_else(src, pnext, pcs, dst)) {
+			if (compile_control_else(src, pnext, pcs, dst)) {
 				return 1;
 			}
 		} else if (pnext->type == LANGP_AST_NODE_CONTROL_IFELSEIF) {
-			if (compile_statement_ifelseif(src, pnext, pcs, dst)) {
+			if (compile_control_ifelseif(src, pnext, pcs, dst)) {
 				return 1;
 			}
 		}
-		langC_writeinteger(dst, pcJmpWrite, dst->length - pcJmpFrom);
+		writeinteger(dst, pcJmpWrite, dst->length - pcJmpFrom);
 	} else {
-		langC_writeinteger(dst, pcJmpnzWrite, dst->length - pcJmpnzFrom);
+		writeinteger(dst, pcJmpnzWrite, dst->length - pcJmpnzFrom);
 	}
 	return 0;
 }
 
-int compile_statement(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst) {
+static int compile_control_while(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst) {
+	int pcJmpTo = dst->length;
+	if (compile_expr(src, pnode->value.controlIfElseif.pexpr, pcs, dst)) {
+		return 1;
+	}
+	LangC_ScopeContext *pscOuter;
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscOuter);
+	emitop(dst, LANGV_OP_JMPZ);
+	int pcJmpnzWrite = dst->length;
+	emitinteger(dst, 1); // PLACEHOLDER
+	pscOuter->stackSize--;
+	int pcJmpnzFrom = dst->length;
+
+	if (push_scope_context(pcs, pscOuter->stackSize, LANGC_SCOPE_TYPE_NORMAL)) {
+		return 1;
+	}
+	if (compile_block(src, pnode->value.controlIfElseif.pblock, pcs, dst)) {
+		return 1;
+	}
+	LangC_ScopeContext *pscInner;
+	langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscInner);
+	if (pscInner->hasCapturedVariables) {
+		emitop(dst, LANGV_OP_CLOSEUPVALS);
+		emitinteger(dst, pscOuter->stackSize);
+	}
+	if (pscInner->stackSize != pscOuter->stackSize) {
+		emitop(dst, LANGV_OP_POPN);
+		emitinteger(dst, pscInner->stackSize - pscOuter->stackSize);
+	}
+	pop_scope_context(pcs);
+	emitop(dst, LANGV_OP_JMP);
+	int pcJmpWrite = dst->length;
+	emitinteger(dst, 0); // PLACEHOLDER
+	writeinteger(dst, pcJmpWrite, pcJmpTo - dst->length);
+
+	writeinteger(dst, pcJmpnzWrite, dst->length - pcJmpnzFrom);
+	return 0;
+}
+
+static int compile_statement(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst) {
 	switch (pnode->type) {
 		case LANGP_AST_NODE_ASSIGNMENT:
 			if (compile_assignment(src, pnode, pcs, dst)) {
@@ -702,21 +768,36 @@ int compile_statement(const char *src, LangP_AstNode *pnode, LangC_CompilerState
 			break;
 		case LANGP_AST_NODE_CONTROL_IFELSEIF:
 		{
-			if (compile_statement_ifelseif(src, pnode, pcs, dst)) {
+			if (compile_control_ifelseif(src, pnode, pcs, dst)) {
+				return 1;
+			}
+		} break;
+		case LANGP_AST_NODE_CONTROL_WHILE:
+		{
+			if (compile_control_while(src, pnode, pcs, dst)) {
 				return 1;
 			}
 		} break;
 		case LANGP_AST_NODE_DEBUGGER:
 		{
-			langC_emitop(dst, LANGV_OP_DEBUGGER);
+			emitop(dst, LANGV_OP_DEBUGGER);
 		} break;
-		case LANGP_AST_NODE_IMPORT:
+		case LANGP_AST_NODE_DECLARATION:
+		{
+			if (compile_declaration(src, pnode, pcs, dst)) {
+				return 1;
+			}
+		} break;
+		case LANGP_AST_NODE_EXPORT:
 		{
 			LangP_AstNode *pparamlist = pnode->value.pnode;
 			int nVar = pparamlist->value.nodes.length;
 			for (int i = 0; i < nVar; i++) {
 				LangP_AstNode *pvar;
-				list_get(&pparamlist->value.nodes, i, &pvar);
+				langM_list_get(&pparamlist->value.nodes, i, &pvar);
+				if (compile_expr(src, pvar, pcs, dst)) {
+					return 1;
+				}
 				LangP_Token *ptokVar = pvar->value.ptoken;
 				int len = ptokVar->value.string.length;
 				char *identifier = malloc(len + 1);
@@ -728,13 +809,37 @@ int compile_statement(const char *src, LangP_AstNode *pnode, LangC_CompilerState
 				memcpy(identifier, src + ptokVar->value.string.index, len);
 				identifier[len] = '\0';
 				LangC_ScopeContext *psc;
-				list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &psc);
-				langC_emitop(dst, LANGV_OP_IMPORT);
-				langC_emitlstring(dst, identifier, len);
+				langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &psc);
+				emitop(dst, LANGV_OP_EXPORT);
+				emitlstring(dst, len, identifier);
+				psc->stackSize--;
+			}
+		} break;
+		case LANGP_AST_NODE_IMPORT:
+		{
+			LangP_AstNode *pparamlist = pnode->value.pnode;
+			int nVar = pparamlist->value.nodes.length;
+			for (int i = 0; i < nVar; i++) {
+				LangP_AstNode *pvar;
+				langM_list_get(&pparamlist->value.nodes, i, &pvar);
+				LangP_Token *ptokVar = pvar->value.ptoken;
+				int len = ptokVar->value.string.length;
+				char *identifier = malloc(len + 1);
+				if (!identifier) {
+					free(identifier);
+					langC_errmsg(pcs, "allocation failed");
+					return 1;
+				}
+				memcpy(identifier, src + ptokVar->value.string.index, len);
+				identifier[len] = '\0';
+				LangC_ScopeContext *psc;
+				langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &psc);
+				emitop(dst, LANGV_OP_IMPORT);
+				emitlstring(dst, len, identifier);
 				psc->stackSize++;
 
 				int idxLocal = psc->stackSize - 1;
-				stringhashtable_put(&psc->identifierTable, identifier, &idxLocal);
+				langM_hash_put(&psc->identifierTable, identifier, &idxLocal);
 			}
 		} break;
 		case LANGP_AST_NODE_RETURN:
@@ -742,7 +847,7 @@ int compile_statement(const char *src, LangP_AstNode *pnode, LangC_CompilerState
 			LangP_AstNode *pexprlist = pnode->value.pnode;
 			int nReturn = pexprlist->value.nodes.length;
 			LangP_AstNode *pexprFirst;
-			list_get(&pexprlist->value.nodes, 0, &pexprFirst);
+			langM_list_get(&pexprlist->value.nodes, 0, &pexprFirst);
 			if (nReturn == 1 && pexprFirst->type == LANGP_AST_NODE_CALL) {
 				// Tail call
 				if (compile_expr(src, pexprFirst->value.call.pexpr, pcs, dst)) {
@@ -752,31 +857,26 @@ int compile_statement(const char *src, LangP_AstNode *pnode, LangC_CompilerState
 				int nArg = parglist->value.nodes.length;
 				for (int i = 0; i < nArg; i++) {
 					LangP_AstNode *parg;
-					list_get(&parglist->value.nodes, i, &parg);
+					langM_list_get(&parglist->value.nodes, i, &parg);
 					if (compile_expr(src, parg, pcs, dst)) {
 						return 1;
 					}
 				}
-				langC_emitop(dst, LANGV_OP_TAILCALL);
-				langC_emitinteger(dst, nArg);
+				emitop(dst, LANGV_OP_TAILCALL);
+				emitinteger(dst, nArg);
 			} else {
 				// Ordinary return
 				for (int i = 0; i < nReturn; i++) {
 					LangP_AstNode *pexpr;
-					list_get(&pexprlist->value.nodes, i, &pexpr);
+					langM_list_get(&pexprlist->value.nodes, i, &pexpr);
 					if (compile_expr(src, pexpr, pcs, dst)) {
 						return 1;
 					}
 				}
-				langC_emitop(dst, LANGV_OP_RETURN);
-				langC_emitinteger(dst, nReturn);
+				emitop(dst, LANGV_OP_RETURN);
+				emitinteger(dst, nReturn);
 			}
 		} break;
-		case LANGP_AST_NODE_DECLARATION:
-			if (compile_declaration(src, pnode, pcs, dst)) {
-				return 1;
-			}
-			break;
 		default:
 			assert(0);
 			return 1;
@@ -784,32 +884,30 @@ int compile_statement(const char *src, LangP_AstNode *pnode, LangC_CompilerState
 	return 0;
 }
 
-int compile_block(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, CharList *dst) {
+static int compile_block(const char *src, LangP_AstNode *pnode, LangC_CompilerState *pcs, LangM_CharList *dst) {
 	if (pnode->type != LANGP_AST_NODE_BLOCK) {
 		assert(0);
 		return 1;
 	}
 	for (int i = 0; i < pnode->value.nodes.length; i++) {
 		LangP_AstNode *psubnode;
-		list_get(&pnode->value.nodes, i, &psubnode);
+		langM_list_get(&pnode->value.nodes, i, &psubnode);
 		if (compile_statement(src, psubnode, pcs, dst))
 			return 1;
 	}
 	return 0;
 }
 
-int langC_init(LangC_CompilerState *pcs) {
-	list_init(&pcs->scopeContexts, sizeof(LangC_ScopeContext *), 1);
+int langC_compile(const char *src, LangP_AstNode *root, LangC_CompilerState *pcs, char **dst, int *len) {
+	langM_list_init(&pcs->scopeContexts, sizeof(LangC_ScopeContext *), 1);
 	if (push_scope_context(pcs, 0, LANGC_SCOPE_TYPE_FUNCTION)) {
+		pcs->msg = "internal error";
 		return 1;
 	}
 	pcs->msg = NULL;
-	return 0;
-}
-
-int langC_compile(const char *src, LangP_AstNode *root, LangC_CompilerState *pcs, char **dst, int *len) {
-	CharList buf;
-	if (charlist_init(&buf, 10)) {
+	LangM_CharList buf;
+	if (langM_charlist_init(&buf, 10)) {
+		pcs->msg = "internal error";
 		return 1;
 	}
 	if (!root || root->type != LANGP_AST_NODE_BLOCK) {
@@ -819,7 +917,7 @@ int langC_compile(const char *src, LangP_AstNode *root, LangC_CompilerState *pcs
 	if (compile_block(src, root, pcs, &buf)) {
 		return 1;
 	}
-	*dst = realloc(buf.data, buf.length);
+	*dst = realloc(buf.data, buf.length ? buf.length : 1);
 	if (!*dst) {
 		langC_errmsg(pcs, "allocation failed");
 		return 1;
@@ -831,9 +929,9 @@ int langC_compile(const char *src, LangP_AstNode *root, LangC_CompilerState *pcs
 void langC_free(LangC_CompilerState *pcs) {
 	for (int i = 0; i < pcs->scopeContexts.length; i++) {
 		LangC_ScopeContext *psc;
-		list_get(&pcs->scopeContexts, i, &psc);
+		langM_list_get(&pcs->scopeContexts, i, &psc);
 		free_scope_context(psc);
 	}
-	list_free(&pcs->scopeContexts);
+	langM_list_free(&pcs->scopeContexts);
 }
 
