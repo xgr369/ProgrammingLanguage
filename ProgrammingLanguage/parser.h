@@ -12,7 +12,7 @@
 
 typedef struct {
 	const char* src;
-	List *ptokens; // List<LangP_Token>
+	LangM_List *ptokens; // LangM_List<LangP_Token>
 	size_t pos;
 	const char *msg;
 } LangP_ParserState;
@@ -33,22 +33,23 @@ typedef enum {
 	LANGP_AST_OP_LEN,
 } LangP_AstOperation;
 
-
 typedef enum {
 	LANGP_AST_NODE_ASSIGNMENT,
 	LANGP_AST_NODE_BINARYEXPR,
 	LANGP_AST_NODE_BLOCK,
 	LANGP_AST_NODE_CALL,
+	LANGP_AST_NODE_CONTROL_ELSE,
 	LANGP_AST_NODE_CONTROL_FUNCTION,
 	LANGP_AST_NODE_CONTROL_IFELSEIF,
-	LANGP_AST_NODE_CONTROL_ELSE,
-	LANGP_AST_NODE_DECLARATION,
-	LANGP_AST_NODE_IMPORT,
-	LANGP_AST_NODE_RETURN,
+	LANGP_AST_NODE_CONTROL_WHILE,
 	LANGP_AST_NODE_DEBUGGER,
+	LANGP_AST_NODE_DECLARATION,
+	LANGP_AST_NODE_EXPORT,
 	LANGP_AST_NODE_EXPRLIST,
 	LANGP_AST_NODE_FIELDEXPR,
+	LANGP_AST_NODE_IMPORT,
 	LANGP_AST_NODE_LEAF,
+	LANGP_AST_NODE_RETURN,
 	LANGP_AST_NODE_UNARYEXPR,
 	LANGP_AST_NODE_VARLIST,
 } LangP_AstNodeType;
@@ -101,26 +102,32 @@ typedef struct {
 	LangP_AstNode *pchild;
 } LangP_AstFieldExpression;
 
+typedef struct {
+	LangP_AstNode *pexpr;
+	LangP_AstNode *pblock;
+} LangP_AstControlWhile;
+
 struct LangP_AstNode {
 	LangP_AstNodeType type;
 	union {
-		/*LEAF*/ LangP_Token *ptoken;
-		/*IMPORT: VARLIST, RETURN: EXPRLIST*/ LangP_AstNode *pnode;
+		/*ASSIGNMENT*/ LangP_AstAssignment assignment;
 		/*BINARYEXPR*/ LangP_AstBinaryExpression binaryExpression;
-		/*UNARYEXPR*/ LangP_AstUnaryExpression unaryExpression;
-		/*BLOCK,VARLIST,EXPRLIST*/ List nodes; // List<LangP_AstNode *>
+		/*DECLARATION*/ LangP_AstDeclaration declaration;
+		/*CALL*/ LangP_AstCall call;
 		/*CONTROL_ELSE*/ LangP_AstControlElse controlElse;
 		/*CONTROL_FUNCTION*/ LangP_AstControlFunction controlFunction;
 		/*CONTROL_IFELSEIF*/ LangP_AstControlIfElseif controlIfElseif;
-		/*CALL*/ LangP_AstCall call;
+		/*CONTROL_WHILE*/ LangP_AstControlWhile controlWhile;
 		/*FIELDEXPR*/ LangP_AstFieldExpression fieldExpression;
-		/*ASSIGNMENT*/ LangP_AstAssignment assignment;
-		/*DECLARATION*/ LangP_AstDeclaration declaration;
+		/*BLOCK,VARLIST,EXPRLIST*/ LangM_List nodes; // LangM_List<LangP_AstNode *>
+		/*IMPORT: VARLIST, EXPORT: VARLIST, RETURN: EXPRLIST*/ LangP_AstNode *pnode;
+		/*LEAF*/ LangP_Token *ptoken;
+		/*UNARYEXPR*/ LangP_AstUnaryExpression unaryExpression;
 		/*DEBUGGER: empty*/
 	} value;
 };
 
-LangP_AstNode *langP_parse(const char *src, List *ptokens, LangP_ParserState *pps);
+LangP_AstNode *langP_parse(const char *src, LangM_List *ptokens, LangP_ParserState *pps);
 void langP_free(LangP_AstNode *pnode);
 
 #endif // PARSER_H

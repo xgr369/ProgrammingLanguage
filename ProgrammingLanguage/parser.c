@@ -93,7 +93,7 @@ void free_node(LangP_AstNode *pnode) {
 		case LANGP_AST_NODE_VARLIST:
 			for (int i = 0; i < pnode->value.nodes.length; i++) {
 				LangP_AstNode *psubnode;
-				list_get(&pnode->value.nodes, i, &psubnode);
+				langM_list_get(&pnode->value.nodes, i, &psubnode);
 				free_node(psubnode);
 			}
 			break;
@@ -106,6 +106,7 @@ void free_node(LangP_AstNode *pnode) {
 			free_node(pnode->value.declaration.pexprlist);
 			break;
 		case LANGP_AST_NODE_IMPORT:
+		case LANGP_AST_NODE_EXPORT:
 		case LANGP_AST_NODE_RETURN:
 			free_node(pnode->value.pnode);
 			break;
@@ -122,6 +123,10 @@ void free_node(LangP_AstNode *pnode) {
 			if (pnode->value.controlIfElseif.pnext) {
 				free_node(pnode->value.controlIfElseif.pnext);
 			}
+			break;
+		case LANGP_AST_NODE_CONTROL_WHILE:
+			free_node(pnode->value.controlWhile.pexpr);
+			free_node(pnode->value.controlWhile.pblock);
 			break;
 		case LANGP_AST_NODE_FIELDEXPR:
 			free_node(pnode->value.fieldExpression.pparent);
@@ -178,7 +183,7 @@ LangP_AstNode *parse_primary(LangP_ParserState *pps) {
 				return NULL;
 			}
 			pparamlist->type = LANGP_AST_NODE_VARLIST;
-			list_init(&pparamlist->value.nodes, sizeof(LangP_AstNode *), 2);
+			langM_list_init(&pparamlist->value.nodes, sizeof(LangP_AstNode *), 2);
 
 			ptok = peek_token(pps);
 			if (!ptok) {
@@ -198,7 +203,7 @@ LangP_AstNode *parse_primary(LangP_ParserState *pps) {
 						free_node(pexpr);
 						return NULL;
 					}
-					list_push(&pparamlist->value.nodes, &pexpr);
+					langM_list_push(&pparamlist->value.nodes, &pexpr);
 					LangP_Token *ptok = peek_token(pps);
 					if (!ptok) {
 						free_node(pparamlist);
@@ -356,7 +361,7 @@ LangP_AstNode *parse_postfix(LangP_ParserState *pps) {
 				return NULL;
 			}
 			parglist->type = LANGP_AST_NODE_EXPRLIST;
-			list_init(&parglist->value.nodes, sizeof(LangP_AstNode *), 2);
+			langM_list_init(&parglist->value.nodes, sizeof(LangP_AstNode *), 2);
 			ptok = peek_token(pps);
 			if (!ptok) {
 				free_node(pexpr);
@@ -373,7 +378,7 @@ LangP_AstNode *parse_postfix(LangP_ParserState *pps) {
 						free_node(parglist);
 						return NULL;
 					}
-					list_push(&parglist->value.nodes, &parg);
+					langM_list_push(&parglist->value.nodes, &parg);
 					ptok = peek_token(pps);
 					if (!ptok) {
 						free_node(pexpr);
@@ -485,7 +490,7 @@ LangP_AstNode *parse_expr(LangP_ParserState *pps) {
 }
 
 LangP_AstNode *parse_control_else(LangP_ParserState *pps) {
-	consume_token(pps);
+	consume_token(pps); // else
 
 	LangP_Token *ptok = peek_token(pps);
 	if (!ptok) {
@@ -620,6 +625,76 @@ LangP_AstNode *parse_control_ifelseif(LangP_ParserState *pps) {
 	return pcontrol;
 }
 
+LangP_AstNode *parse_control_while(LangP_ParserState *pps) {
+	consume_token(pps); // while
+	LangP_Token *ptok = peek_token(pps);
+	if (!ptok) {
+		return NULL;
+	}
+	if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_PARLEFT) {
+		langP_errmsg(pps, "expected '(' in if statement");
+		return NULL;
+	}
+	consume_token(pps);
+	LangP_AstNode *pexpr = parse_expr(pps);
+	if (!pexpr) {
+		return NULL;
+	}
+	ptok = peek_token(pps);
+	if (!ptok) {
+		free_node(pexpr);
+		return NULL;
+	}
+	if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_PARRIGHT) {
+		langP_errmsg(pps, "expected ')' in if statement");
+		free_node(pexpr);
+		return NULL;
+	}
+	consume_token(pps);
+
+	ptok = peek_token(pps);
+	if (!ptok) {
+		free_node(pexpr);
+		return NULL;
+	}
+	if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_CBRACELEFT) {
+		langP_errmsg(pps, "expected '{' in if statement");
+		free_node(pexpr);
+		return NULL;
+	}
+	consume_token(pps);
+	LangP_AstNode *pblock = parse_block(pps);
+	if (!pblock) {
+		free_node(pexpr);
+		return NULL;
+	}
+	ptok = peek_token(pps);
+	if (!ptok) {
+		free_node(pexpr);
+		free_node(pblock);
+		return NULL;
+	}
+	if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_CBRACERIGHT) {
+		langP_errmsg(pps, "expected '}' in if statement");
+		free_node(pexpr);
+		free_node(pblock);
+		return NULL;
+	}
+	consume_token(pps);
+
+	LangP_AstNode *pcontrol = malloc(sizeof(LangP_AstNode));
+	if (!pcontrol) {
+		langP_errmsg(pps, "allocation failed");
+		free_node(pexpr);
+		free_node(pblock);
+		return NULL;
+	}
+	pcontrol->type = LANGP_AST_NODE_CONTROL_WHILE;
+	pcontrol->value.controlWhile.pexpr = pexpr;
+	pcontrol->value.controlWhile.pblock = pblock;
+	return pcontrol;
+}
+
 int consume_semicolon(LangP_ParserState *pps) {
 	LangP_Token *ptok = peek_token(pps);
 	if (!ptok) {
@@ -656,6 +731,55 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 				}
 				return pnode;
 			}
+			case LANGP_TOK_KEYWORD_EXPORT:
+			{
+				consume_token(pps);
+				LangP_AstNode *pparamlist = malloc(sizeof(LangP_AstNode));
+				if (!pparamlist) {
+					langP_errmsg(pps, "allocation failed");
+					return NULL;
+				}
+				pparamlist->type = LANGP_AST_NODE_VARLIST;
+				langM_list_init(&pparamlist->value.nodes, sizeof(LangP_AstNode *), 2);
+				for (;;) {
+					LangP_AstNode *pexpr = parse_expr(pps);
+					if (!pexpr) {
+						free_node(pparamlist);
+						return NULL;
+					}
+					if (!is_identifier(pexpr)) {
+						langP_errmsg(pps, "expected identifier");
+						free_node(pexpr);
+						free_node(pparamlist);
+						return NULL;
+					}
+					langM_list_push(&pparamlist->value.nodes, &pexpr);
+					LangP_Token *ptok = peek_token(pps);
+					if (!ptok) {
+						free_node(pparamlist);
+						return NULL;
+					}
+					if (ptok->type != LANGP_TOK_OPERATOR || ptok->value.tag != LANGP_TOK_OPERATOR_COMMA) {
+						break;
+					}
+					consume_token(pps);
+				}
+
+				LangP_AstNode *pcontrol = malloc(sizeof(LangP_AstNode));
+				if (!pcontrol) {
+					langP_errmsg(pps, "allocation failed");
+					free_node(pparamlist);
+					return NULL;
+				}
+				pcontrol->type = LANGP_AST_NODE_EXPORT;
+				pcontrol->value.pnode = pparamlist;
+
+				if (consume_semicolon(pps)) {
+					free_node(pcontrol);
+					return NULL;
+				}
+				return pcontrol;
+			}
 			case LANGP_TOK_KEYWORD_IF:
 			{
 				LangP_AstNode *pcontrol = parse_control_ifelseif(pps);
@@ -673,7 +797,7 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 					return NULL;
 				}
 				pparamlist->type = LANGP_AST_NODE_VARLIST;
-				list_init(&pparamlist->value.nodes, sizeof(LangP_AstNode *), 2);
+				langM_list_init(&pparamlist->value.nodes, sizeof(LangP_AstNode *), 2);
 				for (;;) {
 					LangP_AstNode *pexpr = parse_expr(pps);
 					if (!pexpr) {
@@ -686,7 +810,7 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 						free_node(pparamlist);
 						return NULL;
 					}
-					list_push(&pparamlist->value.nodes, &pexpr);
+					langM_list_push(&pparamlist->value.nodes, &pexpr);
 					LangP_Token *ptok = peek_token(pps);
 					if (!ptok) {
 						free_node(pparamlist);
@@ -722,7 +846,7 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 					return NULL;
 				}
 				pidentifierlist->type = LANGP_AST_NODE_VARLIST;
-				list_init(&pidentifierlist->value.nodes, sizeof(LangP_AstNode *), 2);
+				langM_list_init(&pidentifierlist->value.nodes, sizeof(LangP_AstNode *), 2);
 				for (;;) {
 					LangP_AstNode *pexpr = parse_expr(pps);
 					if (!pexpr) {
@@ -735,7 +859,7 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 						free_node(pidentifierlist);
 						return NULL;
 					}
-					list_push(&pidentifierlist->value.nodes, &pexpr);
+					langM_list_push(&pidentifierlist->value.nodes, &pexpr);
 					LangP_Token *ptok = peek_token(pps);
 					if (!ptok) {
 						free_node(pidentifierlist);
@@ -766,7 +890,7 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 					return NULL;
 				}
 				pexprlist->type = LANGP_AST_NODE_EXPRLIST;
-				list_init(&pexprlist->value.nodes, sizeof(LangP_AstNode *), 2);
+				langM_list_init(&pexprlist->value.nodes, sizeof(LangP_AstNode *), 2);
 				for (;;) {
 					LangP_AstNode *pexpr = parse_expr(pps);
 					if (!pexpr) {
@@ -774,7 +898,7 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 						free_node(pexprlist);
 						return NULL;
 					}
-					list_push(&pexprlist->value.nodes, &pexpr);
+					langM_list_push(&pexprlist->value.nodes, &pexpr);
 					LangP_Token *ptok = peek_token(pps);
 					if (!ptok) {
 						free_node(pidentifierlist);
@@ -813,14 +937,14 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 					return NULL;
 				}
 				pexprlist->type = LANGP_AST_NODE_EXPRLIST;
-				list_init(&pexprlist->value.nodes, sizeof(LangP_AstNode *), 2);
+				langM_list_init(&pexprlist->value.nodes, sizeof(LangP_AstNode *), 2);
 				for (;;) {
 					LangP_AstNode *pexpr = parse_expr(pps);
 					if (!pexpr) {
 						free_node(pexprlist);
 						return NULL;
 					}
-					list_push(&pexprlist->value.nodes, &pexpr);
+					langM_list_push(&pexprlist->value.nodes, &pexpr);
 					LangP_Token *ptok = peek_token(pps);
 					if (!ptok) {
 						free_node(pexprlist);
@@ -843,6 +967,14 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 
 				if (consume_semicolon(pps)) {
 					free_node(pcontrol);
+					return NULL;
+				}
+				return pcontrol;
+			}
+			case LANGP_TOK_KEYWORD_WHILE:
+			{
+				LangP_AstNode *pcontrol = parse_control_while(pps);
+				if (!pcontrol) {
 					return NULL;
 				}
 				return pcontrol;
@@ -870,8 +1002,8 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 			return NULL;
 		}
 		pvarlist->type = LANGP_AST_NODE_VARLIST;
-		list_init(&pvarlist->value.nodes, sizeof(LangP_AstNode *), 2);
-		list_push(&pvarlist->value.nodes, &pexpr);
+		langM_list_init(&pvarlist->value.nodes, sizeof(LangP_AstNode *), 2);
+		langM_list_push(&pvarlist->value.nodes, &pexpr);
 		for (;;) {
 			LangP_Token *ptok = peek_token(pps);
 			if (!ptok) {
@@ -893,7 +1025,7 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 				free_node(pvarlist);
 				return NULL;
 			}
-			list_push(&pvarlist->value.nodes, &pexpr);
+			langM_list_push(&pvarlist->value.nodes, &pexpr);
 		}
 
 		LangP_Token *ptok = peek_token(pps);
@@ -915,7 +1047,7 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 			return NULL;
 		}
 		pexprlist->type = LANGP_AST_NODE_EXPRLIST;
-		list_init(&pexprlist->value.nodes, sizeof(LangP_AstNode *), 2);
+		langM_list_init(&pexprlist->value.nodes, sizeof(LangP_AstNode *), 2);
 		for (;;) {
 			pexpr = parse_expr(pps);
 			if (!pexpr) {
@@ -923,7 +1055,7 @@ LangP_AstNode *parse_statement(LangP_ParserState *pps) {
 				free_node(pexprlist);
 				return NULL;
 			}
-			list_push(&pexprlist->value.nodes, &pexpr);
+			langM_list_push(&pexprlist->value.nodes, &pexpr);
 			LangP_Token *ptok = peek_token(pps);
 			if (!ptok) {
 				free_node(pvarlist);
@@ -965,7 +1097,7 @@ LangP_AstNode *parse_block(LangP_ParserState *pps) {
 		return NULL;
 	}
 	pblock->type = LANGP_AST_NODE_BLOCK;
-	list_init(&pblock->value.nodes, sizeof(LangP_AstNode *), 2);
+	langM_list_init(&pblock->value.nodes, sizeof(LangP_AstNode *), 2);
 	for (;;) {
 		LangP_Token *ptok = peek_token(pps);
 		if (!ptok) {
@@ -987,7 +1119,7 @@ LangP_AstNode *parse_block(LangP_ParserState *pps) {
 			free_node(pblock);
 			return NULL;
 		}
-		list_push(&pblock->value.nodes, &pstatement);
+		langM_list_push(&pblock->value.nodes, &pstatement);
 	}
 	return pblock;
 }
@@ -999,7 +1131,7 @@ LangP_AstNode *parse_program(LangP_ParserState *pps) {
 		return NULL;
 	}
 	pblock->type = LANGP_AST_NODE_BLOCK;
-	list_init(&pblock->value.nodes, sizeof(LangP_AstNode *), 2);
+	langM_list_init(&pblock->value.nodes, sizeof(LangP_AstNode *), 2);
 	for (;;) {
 		LangP_Token *ptok = peek_token(pps);
 		if (!ptok) {
@@ -1015,12 +1147,12 @@ LangP_AstNode *parse_program(LangP_ParserState *pps) {
 			free_node(pblock);
 			return NULL;
 		}
-		list_push(&pblock->value.nodes, &pstatement);
+		langM_list_push(&pblock->value.nodes, &pstatement);
 	}
 	return pblock;
 }
 
-LangP_AstNode *langP_parse(const char *src, List *ptokens, LangP_ParserState *pps) {
+LangP_AstNode *langP_parse(const char *src, LangM_List *ptokens, LangP_ParserState *pps) {
 	pps->src = src;
 	pps->ptokens = ptokens;
 	pps->pos = 0;
