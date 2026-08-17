@@ -28,6 +28,7 @@ typedef enum {
     LANGP_TOK_KEYWORD_DEBUGGER,
     LANGP_TOK_KEYWORD_ELSE,
     LANGP_TOK_KEYWORD_ELSEIF,
+    LANGP_TOK_KEYWORD_EXPORT,
     LANGP_TOK_KEYWORD_FUNCTION,
     LANGP_TOK_KEYWORD_IF,
     LANGP_TOK_KEYWORD_IMPORT,
@@ -35,6 +36,7 @@ typedef enum {
     LANGP_TOK_KEYWORD_RETURN,
     LANGP_TOK_KEYWORD_THIS,
     LANGP_TOK_KEYWORD_VAR,
+    LANGP_TOK_KEYWORD_WHILE,
     LANGP_TOK_OPERATOR_ASSIGN,
     LANGP_TOK_OPERATOR_EQ,
     LANGP_TOK_OPERATOR_NEQ,
@@ -69,6 +71,6 @@ typedef struct {
     } value;
 } LangP_Token;
 
-List langP_tokenize(const char *src, LangP_LexerState *pls);
+LangM_List langP_tokenize(const char *src, LangP_LexerState *pls);
 
 #endif // LEXER_H

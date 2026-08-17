@@ -43,9 +43,15 @@ void read_keyword_or_identifier(LangP_LexerState *pls, LangP_Token *ptok) {
     } else if (tok_equals(pls, ptok, "else")) {
         ptok->type = LANGP_TOK_KEYWORD;
         ptok->value.tag = LANGP_TOK_KEYWORD_ELSE;
+    } else if (tok_equals(pls, ptok, "while")) {
+        ptok->type = LANGP_TOK_KEYWORD;
+        ptok->value.tag = LANGP_TOK_KEYWORD_WHILE;
     } else if (tok_equals(pls, ptok, "elseif")) {
         ptok->type = LANGP_TOK_KEYWORD;
         ptok->value.tag = LANGP_TOK_KEYWORD_ELSEIF;
+    } else if (tok_equals(pls, ptok, "export")) {
+        ptok->type = LANGP_TOK_KEYWORD;
+        ptok->value.tag = LANGP_TOK_KEYWORD_EXPORT;
     } else if (tok_equals(pls, ptok, "import")) {
         ptok->type = LANGP_TOK_KEYWORD;
         ptok->value.tag = LANGP_TOK_KEYWORD_IMPORT;
@@ -85,7 +91,7 @@ int read_string(LangP_LexerState *pls, LangP_Token *ptok) {
     ptok->value.string.index++;
     consume(pls);
     while (peek(pls) != '"') {
-        if (peek(pls) == '\0') {
+        if (peek(pls) == '\n' || peek(pls) == '\0') {
             langL_errmsg(pls, "unclosed string");
             return 1;
         }
@@ -200,19 +206,19 @@ int read_token(LangP_LexerState *pls, LangP_Token *ptok) {
     return 1;
 }
 
-List langP_tokenize(const char *src, LangP_LexerState *pls) {
+LangM_List langP_tokenize(const char *src, LangP_LexerState *pls) {
     pls->src = src;
     pls->pos = 0;
     pls->msg = NULL;
     LangP_Token tok;
-    List tokens;
-    list_init(&tokens, sizeof(LangP_Token), 10);
+    LangM_List tokens;
+    langM_list_init(&tokens, sizeof(LangP_Token), 10);
     do {
         if (read_token(pls, &tok)) {
             break;
         }
         if (tok.type != LANGP_TOK_WHITESPACE) {
-            list_push(&tokens, &tok);
+            langM_list_push(&tokens, &tok);
         }
     } while (tok.type != LANGP_TOK_EOF);
 
