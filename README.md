@@ -1,9 +1,9 @@
 # ProgrammingLanguage
 
-A programming language with Javascript syntax, intended to be embedded within applications.
+"Programming Language" (no name decided yet) is a Javascript dialect focused on embedability.
 
-Features: dynamically-typed variables, operations, multiple assignment, first-class functions (closures and C functions), if-else statements, while loop, and a C API.
-Its development is not complete.
+Its features include multiple assignment, flow control, and first-class functions. Compared to Lua and Javascript, it lacks the following features: tables/arrays, corountines/async, object-oriented programming, "break" statements, "goto" statements, empty return statements.
+
 
 Example program (assuming `print` is implemented by the application):
 ```
