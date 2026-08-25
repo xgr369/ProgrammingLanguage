@@ -2,7 +2,7 @@
 
 "Programming Language" (no name decided yet) is a Javascript dialect focused on embedability.
 
-Its features include multiple assignment, flow control, and first-class functions. Compared to Lua and Javascript, it lacks the following features: tables/arrays, corountines/async, object-oriented programming, "break" statements, "goto" statements, empty return statements.
+Its features include multiple assignment, if-else statements, while loops, and first-class functions. Compared to Lua and Javascript, it lacks the following features: tables/arrays, corountines/async, object-oriented programming, "break" statements, "goto" statements, empty return statements.
 
 
 Example program (assuming `print` is implemented by the application):
