@@ -6,7 +6,7 @@ Its features include multiple assignment, if-else statements, while loops, and f
 
 
 Example program (assuming `print` is implemented by the application):
-```
+```javascript
 import print;
 var generator = function() {
     var x = 0;
