@@ -2,8 +2,9 @@
 
 "Programming Language" (no name decided yet) is a Javascript dialect focused on embedability.
 
-Its features include multiple assignment, if-else statements, while loops, and first-class functions.
-It lacks the following features, however: tables/arrays, corountines/async, object-oriented programming, "break" statements, "goto" statements, empty return statements.
+Its main features include multiple assignment, if-else statements, while loops, and first-class functions.
+
+It lacks the following, however: tables/arrays, corountines/async, object-oriented programming, "break" statements, "goto" statements, empty return statements.
 
 
 Example program (assuming `print` is implemented by the application):
