@@ -1,10 +1,10 @@
 #include "vm.h"
 
-int langV_exec(LangState *L, const char *src, int baseFrame) {
-	char *address = src;
-	int len = L->srcLen;
+int langV_exec(LangState *L, LangChunk chunk, int baseFrame) {
+	char *address = chunk.ptr;
+	int len = chunk.length;
 	L->paddress = &address;
-	while (address - L->src < len) {
+	while (address - chunk.ptr < len) {
 		//printf("pc=%ld, op=%ld\n", pc, src[pc]);
 		LangV_Operation _op = *address;
 		switch (_op) {
@@ -156,6 +156,17 @@ int langV_exec(LangState *L, const char *src, int baseFrame) {
 				address += sizeof(int);
 				break;
 			}
+			case LANGV_OP_LIST:
+			{
+				address++;
+
+				int idx;
+				memcpy(&idx, address, sizeof(int));
+				address += sizeof(int);
+
+				lang_createlist(L, idx);
+				break;
+			}
 			case LANGV_OP_POPN:
 			{
 				address++;
@@ -171,8 +182,10 @@ int langV_exec(LangState *L, const char *src, int baseFrame) {
 			{
 				address++;
 
+				LangChunk functionChunk;
 				int pos;
 				memcpy(&pos, address, sizeof(int));
+				functionChunk.ptr = chunk.ptr + pos;
 				address += sizeof(int);
 
 				int nParam;
@@ -183,7 +196,7 @@ int langV_exec(LangState *L, const char *src, int baseFrame) {
 				memcpy(&nUpval, address, sizeof(int));
 				address += sizeof(int);
 
-				lang_pushlfunction(L, L->src + pos, nParam, nUpval, address);
+				lang_pushlfunction(L, functionChunk, nParam, nUpval, address);
 				address += nUpval * (sizeof(char) + sizeof(int));
 			} break;
 			case LANGV_OP_PUSHLSTRING:
@@ -314,9 +327,10 @@ int langV_exec(LangState *L, const char *src, int baseFrame) {
 
 #define print_literal(l) printf("%s", "" l)
 #define print_op(l) printf("%-14s ", "" l)
-int langV_print(const char *src, int len) {
+int langV_print(LangChunk chunk) {
+	char *src = chunk.ptr;
 	int pc = 0;
-	while (pc < len) {
+	while (pc < chunk.length) {
 		char buf[64];
 		printf("%3d", pc);
 		print_literal(" ");
@@ -448,6 +462,17 @@ int langV_print(const char *src, int len) {
 				int steps;
 				memcpy(&steps, src + pc, sizeof(int));
 				printf("%-3d", steps);
+				pc += sizeof(int);
+				break;
+			}
+			case LANGV_OP_LIST:
+			{
+				print_op("list");
+				pc++;
+
+				int idx;
+				memcpy(&idx, src + pc, sizeof(int));
+				printf("%-3d", idx);
 				pc += sizeof(int);
 				break;
 			}

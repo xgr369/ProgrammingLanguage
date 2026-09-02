@@ -1,6 +1,5 @@
 #include "core.h"
 #include <string.h>
-#include "compiler.h"
 #include "vm.h"
 
 #define LANG_MAX_TOSTRING_LEN 44
@@ -200,12 +199,12 @@ void lang_call(LangState *L, int nArg, int nReturnExpected) {
 		L->callInfo.numReturnExpected = nReturnExpected;
 		L->callInfo.plfunction = plf;
 		if (fromC) {
-			if (langV_exec(L, plf->ptr, L->prevCallInfos.length)) {
+			if (langV_exec(L, plf->chunk, L->prevCallInfos.length)) {
 				L->error(L);
 				return;
 			}
 		} else {
-			*L->paddress = plf->ptr;
+			*L->paddress = plf->chunk.ptr;
 		}
 	} else if (ptv->variant == LANG_VARIANT_CFUNC) {
 		LangCallInfo callInfoPrev = L->callInfo;
@@ -291,11 +290,10 @@ void lang_collectgarbage(LangState *L) {
 		L->gcLowThreshold = L->gcLowCount * LANG_GC_LOW_THRINCR;
 	}
 }
-
 void lang_export(LangState *L, const char *name) {
 	LangTValue *ptv = gettvaluelocal(L, -1);
-	if (langM_hash_put(&L->registry, name, ptv)) {
-		lang_errmsg(L, "import value not found");
+	if (langM_table_put(&L->registry, name, ptv)) {
+		lang_errmsg(L, "internal error");
 		return;
 	}
 	lang_pop(L);
@@ -331,7 +329,7 @@ void lang_getupvalue(LangState *L, int index) {
 }
 
 void lang_import(LangState *L, const char *name) {
-	LangTValue *ptv = langM_hash_at(&L->registry, name);
+	LangTValue *ptv = langM_table_at(&L->registry, name);
 	if (!ptv) {
 		lang_errmsg(L, "import value not found");
 		return;
@@ -519,14 +517,14 @@ void lang_closeupvals(LangState *L, int index) {
 	L->upvalOpen = *ppu;
 }
 
-void lang_pushlfunction(LangState *L, const char *src, int nParam, int nUpval, const char *upvals) {
+void lang_pushlfunction(LangState *L, LangChunk chunk, int nParam, int nUpval, const char *upvals) {
 	LangFunction *plf = newobject(L, sizeof(LangFunction) + sizeof(LangUpval) * nUpval, LANG_GCTYPE_LFUNC);
 	if (!plf) {
 		return;
 	}
 	plf->numParam = nParam;
 	plf->numUpval = nUpval;
-	plf->ptr = src;
+	plf->chunk = chunk;
 	for (int i = 0; i < nUpval; i++) {
 		char upvalType = *upvals;
 		upvals++;
@@ -563,7 +561,6 @@ int lang_iszero(LangState *L) {
 	return ptv->type == LANG_TYPE_NULL || (ptv->type == LANG_TYPE_NUMBER && ptv->value.number == 0);
 }
 
-#include <Windows.h>
 void lang_pushuserdata(LangState *L, int dataSize, int nRefs, void *srcData, LangObject **srcRef) {
 	LangUserdata *pu = newobject(L, sizeof(LangUserdata) + dataSize + nRefs * sizeof(LangObject *), LANG_GCTYPE_UDATA);
 	pu->dataSize = dataSize;
@@ -582,7 +579,7 @@ void lang_registerfunc(LangState *L, const char *name, lang_cfunction func) {
 	tv.type = LANG_TYPE_FUNCTION;
 	tv.variant = LANG_VARIANT_CFUNC;
 	tv.value.ptr = func;
-	langM_hash_put(&L->registry, name, &tv);
+	langM_table_put(&L->registry, name, &tv);
 }
 
 void lang_return(LangState *L, int nReturn, int baseFrame) {
@@ -620,7 +617,7 @@ void lang_tailcall(LangState *L, int nArg) {
 		langM_list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 		LangFunction *plf = ptv->value.ptr;
 		L->callInfo.plfunction = plf;
-		*L->paddress = plf->ptr;
+		*L->paddress = plf->chunk.ptr;
 	} else if (ptv->variant == LANG_VARIANT_CFUNC) {
 		lang_closeupvals(L, L->callInfo.stackFrame);
 		int nRemove = L->stack.length - nArg - L->callInfo.stackFrame;
@@ -702,7 +699,10 @@ LangState *lang_newstate() {
 	if (langM_list_init(&L->prevCallInfos, sizeof(LangCallInfo), 1)) {
 		return NULL;
 	}
-	if (langM_hash_init(&L->registry, sizeof(LangTValue), 2)) {
+	if (langM_list_init(&L->chunks, sizeof(LangChunk), 1)) {
+		return NULL;
+	}
+	if (langM_table_init(&L->registry, sizeof(LangTValue), 2)) {
 		return NULL;
 	}
 	L->gcLow = NULL;
@@ -711,8 +711,6 @@ LangState *lang_newstate() {
 	// ignore L->callInfo.numReturnExpected
 	// ignore L->callInfo.address
 	L->callInfo.plfunction = NULL;
-	L->src = NULL;
-	L->srcLen = 0;
 	// ignore L->paddress
 	L->gcLowCount = 0;
 	L->gcLowThreshold = 0;
@@ -751,7 +749,8 @@ int lang_clear(LangState *L) {
 void lang_close(LangState *L) {
 	langM_list_free(&L->stack);
 	langM_list_free(&L->prevCallInfos);
-	langM_hash_free(&L->registry);
+	langM_list_free(&L->chunks);
+	langM_table_free(&L->registry);
 	LangObject *po = L->gcLow;
 	LangObject *poNext;
 	while (po) {
@@ -767,53 +766,35 @@ void lang_close(LangState *L) {
 	}
 }
 
-void lang_load(LangState *L, const char *src) {
-	L->msg = NULL;
-	L->msgCode = LANG_OK;
-
-	LangP_LexerState ls;
-	LangM_List tokens = langP_tokenize(src, &ls);
-	if (ls.msg) {
-		langM_list_free(&tokens);
-
-		L->msgCode = LANG_ERR_COMPILE;
-		L->msg = ls.msg;
-		L->error(L);
-		return;
+LangChunk lang_compile(LangState *L, const char *src) {
+	LangP_ParserData parserData = langP_parse(src, &L->msg);
+	if (!parserData.ast) {
+		return (LangChunk) { 0 };
 	}
-
-	LangP_ParserState ps;
-	LangP_AstNode *ast = langP_parse(src, &tokens, &ps);
-	if (!ast) {
-		langM_list_free(&tokens);
-		langP_free(ast);
-
-		L->msgCode = LANG_ERR_COMPILE;
-		L->msg = ps.msg;
-		L->error(L);
-		return;
+	LangChunk chunk = langC_compile(src, parserData.ast, &L->msg);
+	langP_free(parserData);
+	if (!chunk.ptr) {
+		return (LangChunk) { 0 };
 	}
+	return chunk;
+}
 
-	LangC_CompilerState cs;
-	int result = langC_compile(src, ast, &cs, &L->src, &L->srcLen);
-	langM_list_free(&tokens);
-	langP_free(ast);
-	langC_free(&cs);
-	if (result) {
+int lang_load(LangState *L, const char *src) {
+	LangChunk chunk = lang_compile(L, src);
+	if (!chunk.ptr) {
 		L->msgCode = LANG_ERR_COMPILE;
-		L->msg = cs.msg;
 		L->error(L);
-		return;
+		return 1;
 	}
-
 #if _DEBUG
-	if (langV_print(L->src, L->srcLen)) {
+	if (langV_print(chunk)) {
 		return;
 	}
 #endif
-
-	if (langV_exec(L, L->src, 0)) {
+	int result = langV_exec(L, chunk, 0);
+	langC_free(chunk);
+	if (result) {
 		L->error(L);
 	}
-	free(L->src);
+	return result;
 }

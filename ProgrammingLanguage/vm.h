@@ -10,6 +10,7 @@
 #include <string.h>
 #include "conf.h"
 #include "core.h"
+#include "compiler.h"
 
 typedef enum {
 	LANGV_OP_BINARYOP,
@@ -20,9 +21,10 @@ typedef enum {
 	LANGV_OP_GETFIELD,
 	LANGV_OP_GETLOCAL,
 	LANGV_OP_GETUPVAL,
+	LANGV_OP_IMPORT,
 	LANGV_OP_JMP,
 	LANGV_OP_JMPZ,
-	LANGV_OP_IMPORT,
+	LANGV_OP_LIST,
 	LANGV_OP_POPN,
 	LANGV_OP_PUSHFUNCTION,
 	LANGV_OP_PUSHLSTRING,	    
@@ -37,7 +39,7 @@ typedef enum {
 	LANGV_OP_UNARYOP,
 } LangV_Operation;
 
-LANG_API int langV_exec(LangState *L, const char *src, int stackFrameId);
-LANG_API int langV_print(const char *src, int len);
+LANG_API int langV_exec(LangState *L, LangChunk chunk, int baseFrame);
+LANG_API int langV_print(LangChunk chunk);
 
 #endif // VM_H

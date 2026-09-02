@@ -9,7 +9,8 @@
 #include "charlist.h"
 #include "conf.h"
 #include "parser.h"
-#include "hash.h"
+#include "table.h"
+#include "lang.h"
 
 typedef enum {
 	LANGC_SCOPE_TYPE_FUNCTION,
@@ -22,10 +23,10 @@ typedef struct {
 } LangC_UpvalDesc;
 
 typedef struct {
-	LangM_Hash identifierTable; // LangM_Hash<int>
+	LangM_Table identifierTable; // LangM_Table<int>
 	size_t stackSize;
 	LangC_ScopeType type;
-	LangM_Hash upvalTable; // LangM_Hash<int for upvalues>
+	LangM_Table upvalTable; // LangM_Table<int for upvalues>
 	LangM_List upvals; // LangM_List<LangC_UpvalDesc>
 	int hasCapturedVariables;
 } LangC_ScopeContext;
@@ -35,7 +36,7 @@ typedef struct {
 	const char *msg;
 } LangC_CompilerState;
 
-int langC_compile(char *src, LangP_AstNode *root, LangC_CompilerState *pcs, char **dst, int *len);
-void langC_free(LangC_CompilerState *pcs);
+LangChunk langC_compile(const char *src, LangP_AstNode *ast, char **perrmsg);
+void langC_free(LangChunk chunk);
 
 #endif // COMPILER_H

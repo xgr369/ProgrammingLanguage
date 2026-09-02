@@ -8,7 +8,7 @@
 
 #include "conf.h"
 #include "charlist.h"
-#include "hash.h"
+#include "table.h"
 #include "list.h"
 
 typedef struct LangState LangState;
@@ -40,6 +40,11 @@ typedef struct LangState LangState;
 #define LANG_OP_NEG		9
 #define LANG_OP_NOT		10
 #define LANG_OP_LEN		11
+
+typedef struct {
+	char *ptr;
+	int length;
+} LangChunk;
 
 typedef int (*lang_cfunction)(struct LangState *L);
 
@@ -77,7 +82,7 @@ typedef struct {
 
 typedef struct {
 	LangObject;
-	void *ptr;
+	LangChunk chunk;
 	int numParam;
 	int numUpval;
 	LangUpval *upvalues[];
@@ -105,12 +110,11 @@ struct LangState {
 	LangM_List stack; // LangM_List<LangTValue>
 	LangCallInfo callInfo;
 	LangM_List prevCallInfos; // LangM_List<LangCallInfo>
-	char *src;
-	int srcLen;
+	LangM_List chunks; // LangM_List<LangChunk>
 	char **paddress;
 	int msgCode;
 	const char *msg;
-	LangM_Hash registry; // LangM_Hash<LangTValue>
+	LangM_Table registry; // LangM_Table<LangTValue>
 	int gcLowCount; int gcLowThreshold;
 	LangObject *gcLow;
 	LangObject *upvalOpen;
@@ -118,10 +122,17 @@ struct LangState {
 	lang_cfunction error;
 };
 
+typedef struct {
+	char *name;
+	lang_cfunction func;
+} lang_reg;
+
 #define lang_errmsg(L, _msg) {\
 	L->msgCode = LANG_ERR_RUN;\
 	L->msg = _msg;\
 }
+
+#define lang_argcount(L) ((L)->stack.length - (L)->callInfo.stackFrame)
 
 // operation
 LANG_API void lang_binaryop (LangState *L, char op);
@@ -175,6 +186,6 @@ LANG_API void lang_atdebug(LangState *L, lang_cfunction debugf);
 LANG_API void lang_aterror(LangState *L, lang_cfunction errorf);
 LANG_API void lang_close(LangState *L);
 LANG_API int lang_clear(LangState *L);
-LANG_API void lang_load(LangState *L, const char *src);
+LANG_API int lang_load(LangState *L, const char *src);
 
 #endif // LANG_H
