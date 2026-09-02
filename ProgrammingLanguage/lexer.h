@@ -11,10 +11,19 @@
 #include "list.h"
 
 typedef struct {
+    const char* src;
+    LangM_List tokens; // LangM_List<LangP_Token>
+    size_t pos;
+    const char *msg;
+} LangP_ParserState;
+
+#define langP_errmsg(pps, _msg) (pps->msg = _msg)
+
+/*typedef struct {
     const char *src;
     size_t pos;
     const char *msg;
-} LangP_LexerState;
+} LangP_LexerState;*/
 
 typedef enum {
     LANGP_TOK_IDENTIFIER,
@@ -55,8 +64,11 @@ typedef enum {
     LANGP_TOK_OPERATOR_NOT,
     LANGP_TOK_OPERATOR_LEN,
     LANGP_TOK_OPERATOR_DOT,
+    LANGP_TOK_OPERATOR_SBRACELEFT,
+    LANGP_TOK_OPERATOR_SBRACERIGHT,
     LANGP_TOK_OPERATOR_CBRACELEFT,
     LANGP_TOK_OPERATOR_CBRACERIGHT,
+    LANGP_TOK_OPERATOR_COLON,
 } LangP_TokenTag;
 
 typedef struct {
@@ -69,8 +81,9 @@ typedef struct {
         double number;
         LangP_TokenTag tag;
     } value;
+    int withinAst;
 } LangP_Token;
 
-LangM_List langP_tokenize(const char *src, LangP_LexerState *pls);
+LangM_List langP_tokenize(LangP_ParserState *pps);
 
 #endif // LEXER_H
