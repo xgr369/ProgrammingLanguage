@@ -156,17 +156,6 @@ int langV_exec(LangState *L, LangChunk chunk, int baseFrame) {
 				address += sizeof(int);
 				break;
 			}
-			case LANGV_OP_LIST:
-			{
-				address++;
-
-				int idx;
-				memcpy(&idx, address, sizeof(int));
-				address += sizeof(int);
-
-				lang_createlist(L, idx);
-				break;
-			}
 			case LANGV_OP_POPN:
 			{
 				address++;
@@ -186,6 +175,7 @@ int langV_exec(LangState *L, LangChunk chunk, int baseFrame) {
 				int pos;
 				memcpy(&pos, address, sizeof(int));
 				functionChunk.ptr = chunk.ptr + pos;
+				functionChunk.length = chunk.length - pos; // temporary workaround to avoid bugs
 				address += sizeof(int);
 
 				int nParam;
@@ -462,17 +452,6 @@ int langV_print(LangChunk chunk) {
 				int steps;
 				memcpy(&steps, src + pc, sizeof(int));
 				printf("%-3d", steps);
-				pc += sizeof(int);
-				break;
-			}
-			case LANGV_OP_LIST:
-			{
-				print_op("list");
-				pc++;
-
-				int idx;
-				memcpy(&idx, src + pc, sizeof(int));
-				printf("%-3d", idx);
 				pc += sizeof(int);
 				break;
 			}
