@@ -52,7 +52,7 @@ export x;
 ```
 However, this doesn't work properly with functions defined in the script, as they are discarded upon the script's termination.
 ## Missing features
-The language lacks the following features, however: comments, tables/arrays, corountines/async, object-oriented programming, "break" statements, "goto" statements, empty return statements.
+The language lacks the following features: empty declarations, empty return statements, tables/arrays, object-oriented programming, "break"/"continue" statements, "goto" statements, coroutines/async, and comments.
 
 # Sample program
 Assuming that `print` is implemented by the host application:
