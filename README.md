@@ -12,9 +12,7 @@ Its main features are multiple assignment, if-else statements, while loops, firs
 # Features
 ## Variable declaration and assignment
 ```javascript
-var a = 0;
-var b = 1;
-a, b = b, a;
+var a, b, c, d = 0, "string", null;
 ```
 Functions can also return multiple values.
 ```javascript
