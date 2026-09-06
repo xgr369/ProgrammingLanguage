@@ -3,7 +3,7 @@
 * Entry point for the command-line application.
 */
 
-#if !LANG_BUILD_AS_DLL
+#ifndef LANG_BUILD_AS_DLL
 
 #include <stdio.h>
 #include "lang.h"
@@ -152,7 +152,6 @@ int run_file(const char *path) {
     LangState *L = lang_newstate();
     if (!L) {
         free(src);
-        fclose(file);
         return 1;
     }
     lang_atdebug(L, debug);
@@ -162,10 +161,10 @@ int run_file(const char *path) {
         lang_registerfunc(L, base_funcs[i].name, base_funcs[i].func);
     }
 
-    lang_load(L, src);
+    int result = lang_load(L, src);
     lang_close(L);
     free(src);
-    return 0;
+    return result;
 }
 
 int main(int argc, char **argv) {
