@@ -180,22 +180,22 @@ void lang_binaryop(LangState *L, char op) {
 	langM_list_push(&L->stack, &result);
 }
 
-void lang_call(LangState *L, int nArg, int nReturnExpected) {
-	LangTValue *ptv = gettvaluelocal(L, -nArg - 1);
+void lang_call(LangState *L, int nParam, int nReturnExpected) {
+	LangTValue *ptv = gettvaluelocal(L, -nParam - 1);
 	if (ptv->type != LANG_TYPE_FUNCTION) {
 		lang_errmsg(L, "value is not callable");
 		return;
 	}
 	if (ptv->variant == LANG_VARIANT_LFUNC) {
 		LangFunction *plf = ptv->value.ptr;
-		if (nArg != plf->numParam) {
+		if (nParam != plf->numArg) {
 			lang_errmsg(L, "invalid number of arguments");
 			return;
 		}
 		int fromC = lang_inCframe(L);
 		L->callInfo.address = *L->paddress;
 		langM_list_push(&L->prevCallInfos, &L->callInfo);
-		L->callInfo.stackFrame = L->stack.length - nArg;
+		L->callInfo.stackFrame = L->stack.length - nParam;
 		L->callInfo.numReturnExpected = nReturnExpected;
 		L->callInfo.plfunction = plf;
 		if (fromC) {
@@ -208,7 +208,7 @@ void lang_call(LangState *L, int nArg, int nReturnExpected) {
 		}
 	} else if (ptv->variant == LANG_VARIANT_CFUNC) {
 		LangCallInfo callInfoPrev = L->callInfo;
-		L->callInfo.stackFrame = L->stack.length - nArg;
+		L->callInfo.stackFrame = L->stack.length - nParam;
 		L->callInfo.plfunction = NULL;
 		int nReturn = ((lang_cfunction)ptv->value.ptr)(L);
 		if (nReturn < nReturnExpected) {
@@ -517,12 +517,12 @@ void lang_closeupvals(LangState *L, int index) {
 	L->upvalOpen = *ppu;
 }
 
-void lang_pushlfunction(LangState *L, LangChunk chunk, int nParam, int nUpval, const char *upvals) {
+void lang_pushlfunction(LangState *L, LangChunk chunk, int nArg, int nUpval, const char *upvals) {
 	LangFunction *plf = newobject(L, sizeof(LangFunction) + sizeof(LangUpval) * nUpval, LANG_GCTYPE_LFUNC);
 	if (!plf) {
 		return;
 	}
-	plf->numParam = nParam;
+	plf->numArg = nArg;
 	plf->numUpval = nUpval;
 	plf->chunk = chunk;
 	for (int i = 0; i < nUpval; i++) {
@@ -605,26 +605,26 @@ void lang_return(LangState *L, int nReturn, int baseFrame) {
 	}
 }
 
-void lang_tailcall(LangState *L, int nArg) {
-	LangTValue *ptv = gettvaluelocal(L, -nArg - 1);
+void lang_tailcall(LangState *L, int nParam) {
+	LangTValue *ptv = gettvaluelocal(L, -nParam - 1);
 	if (ptv->type != LANG_TYPE_FUNCTION) {
 		lang_errmsg(L, "value is not callable");
 		return;
 	}
 	if (ptv->variant == LANG_VARIANT_LFUNC) {
 		lang_closeupvals(L, L->callInfo.stackFrame);
-		int nRemove = L->stack.length - nArg - L->callInfo.stackFrame;
+		int nRemove = L->stack.length - nParam - L->callInfo.stackFrame;
 		langM_list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 		LangFunction *plf = ptv->value.ptr;
 		L->callInfo.plfunction = plf;
 		*L->paddress = plf->chunk.ptr;
 	} else if (ptv->variant == LANG_VARIANT_CFUNC) {
 		lang_closeupvals(L, L->callInfo.stackFrame);
-		int nRemove = L->stack.length - nArg - L->callInfo.stackFrame;
+		int nRemove = L->stack.length - nParam - L->callInfo.stackFrame;
 		langM_list_removen(&L->stack, L->callInfo.stackFrame - 1, nRemove);
 
-		ptv = gettvaluelocal(L, -nArg - 1);
-		L->callInfo.stackFrame = L->stack.length - nArg;
+		ptv = gettvaluelocal(L, -nParam - 1);
+		L->callInfo.stackFrame = L->stack.length - nParam;
 		L->callInfo.plfunction = NULL;
 		int nReturn = ((lang_cfunction)ptv->value.ptr)(L);
 		int nReturnExpected = L->callInfo.numReturnExpected;
@@ -694,16 +694,16 @@ LangState *lang_newstate() {
 		return NULL;
 	}
 	if (langM_list_init(&L->stack, sizeof(LangTValue), LANG_STACK_BASE_SIZE)) {
-		return NULL;
+		goto lang_init_cleanup_L;
 	}
 	if (langM_list_init(&L->prevCallInfos, sizeof(LangCallInfo), 1)) {
-		return NULL;
+		goto lang_init_cleanup_stack;
 	}
 	if (langM_list_init(&L->chunks, sizeof(LangChunk), 1)) {
-		return NULL;
+		goto lang_init_cleanup_prevCallInfos;
 	}
 	if (langM_table_init(&L->registry, sizeof(LangTValue), 2)) {
-		return NULL;
+		goto lang_init_cleanup_chunks;
 	}
 	L->gcLow = NULL;
 	L->upvalOpen = NULL;
@@ -719,6 +719,16 @@ LangState *lang_newstate() {
 	L->debug = no_cfunction;
 	L->error = no_cfunction;
 	return L;
+
+lang_init_cleanup_chunks:
+	langM_list_free(&L->chunks);
+lang_init_cleanup_prevCallInfos:
+	langM_list_free(&L->prevCallInfos);
+lang_init_cleanup_stack:
+	langM_list_free(&L->stack);
+lang_init_cleanup_L:
+	free(L);
+	return NULL;
 }
 
 void lang_atdebug(LangState *L, lang_cfunction debugf) {
@@ -735,7 +745,7 @@ int lang_clear(LangState *L) {
 		lang_errmsg(L, "internal error");
 		return 1;
 	}
-	if (langM_list_init(&L->prevCallInfos, sizeof(LangCallInfo), 1)) {
+	if (langM_list_clear(&L->prevCallInfos, 1)) {
 		lang_errmsg(L, "internal error");
 		return 1;
 	}
@@ -764,6 +774,7 @@ void lang_close(LangState *L) {
 		free(po);
 		po = poNext;
 	}
+	free(L);
 }
 
 LangChunk lang_compile(LangState *L, const char *src) {
@@ -788,7 +799,8 @@ int lang_load(LangState *L, const char *src) {
 	}
 #if _DEBUG
 	if (langV_print(chunk)) {
-		return;
+		langC_free(chunk);
+		return 1;
 	}
 #endif
 	int result = langV_exec(L, chunk, 0);
