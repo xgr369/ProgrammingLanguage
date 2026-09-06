@@ -83,7 +83,7 @@ typedef struct {
 typedef struct {
 	LangObject;
 	LangChunk chunk;
-	int numParam;
+	int numArg;
 	int numUpval;
 	LangUpval *upvalues[];
 } LangFunction;
@@ -136,7 +136,7 @@ typedef struct {
 
 // operation
 LANG_API void lang_binaryop (LangState *L, char op);
-LANG_API void lang_call (LangState *L, int nArg, int nReturnExpected);
+LANG_API void lang_call (LangState *L, int nParam, int nReturnExpected);
 LANG_API int  lang_iszero (LangState *L);
 LANG_API void lang_tostring (LangState *L);
 LANG_API void lang_tonumber (LangState *L);	

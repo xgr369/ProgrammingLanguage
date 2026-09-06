@@ -72,8 +72,8 @@ static int compile_call(const char *src, LangP_AstNode *pnode, LangC_CompilerSta
 		return 1;
 	}
 	LangP_AstNode *parglist = pnode->value.call.pexprlist;
-	int nArg = parglist->value.nodes.length;
-	for (int i = 0; i < nArg; i++) {
+	int nParam = parglist->value.nodes.length;
+	for (int i = 0; i < nParam; i++) {
 		LangP_AstNode *pArg;
 		langM_list_get(&parglist->value.nodes, i, &pArg);
 		if (compile_expr(src, pArg, pcs, dst)) {
@@ -81,7 +81,7 @@ static int compile_call(const char *src, LangP_AstNode *pnode, LangC_CompilerSta
 		}
 	}
 	emitop(dst, LANGV_OP_CALL);
-	emitinteger(dst, nArg);
+	emitinteger(dst, nParam);
 	emitinteger(dst, nReturn);
 	psc->stackSize = sizeB + nReturn;
 	return 0;
@@ -341,8 +341,8 @@ static int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerSta
 			push_scope_context(pcs, 0, LANGC_SCOPE_TYPE_FUNCTION);
 			LangC_ScopeContext *pscInner;
 			langM_list_get(&pcs->scopeContexts, pcs->scopeContexts.length - 1, &pscInner);
-			int nParam = pnode->value.functionExpression.pparamlist->value.nodes.length;
-			for (int i = 0; i < nParam; i++) {
+			int nArg = pnode->value.functionExpression.pparamlist->value.nodes.length;
+			for (int i = 0; i < nArg; i++) {
 				LangP_AstNode *pvar;
 				langM_list_get(&pnode->value.functionExpression.pparamlist->value.nodes, i, &pvar);
 				LangP_Token *ptok = pvar->value.ptoken;
@@ -358,7 +358,7 @@ static int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerSta
 				langM_table_put(&pscInner->identifierTable, identifier, &i);
 				free(identifier);
 			}
-			pscInner->stackSize = nParam;
+			pscInner->stackSize = nArg;
 			LangP_AstNode *pblock = pnode->value.functionExpression.pblock;
 			if (compile_block(src, pblock, pcs, dst)) {
 				return 1;
@@ -377,7 +377,7 @@ static int compile_expr(const char *src, LangP_AstNode *pnode, LangC_CompilerSta
 
 			emitop(dst, LANGV_OP_PUSHFUNCTION);
 			emitinteger(dst, blockStart);
-			emitinteger(dst, nParam);
+			emitinteger(dst, nArg);
 			emitinteger(dst, pscInner->upvals.length);
 			for (int i = 0; i < pscInner->upvals.length; i++) {
 				LangC_UpvalDesc *pud = langM_list_at(&pscInner->upvals, i);
@@ -441,8 +441,8 @@ static int compile_declaration(const char *src, LangP_AstNode *pnode, LangC_Comp
 			return 1;
 		}
 		LangP_AstNode *parglist = pexpr->value.call.pexprlist;
-		int nArg = parglist->value.nodes.length;
-		for (int i = 0; i < nArg; i++) {
+		int nParam = parglist->value.nodes.length;
+		for (int i = 0; i < nParam; i++) {
 			LangP_AstNode *parg;
 			langM_list_get(&parglist->value.nodes, i, &parg);
 			if (compile_expr(src, parg, pcs, dst)) {
@@ -450,7 +450,7 @@ static int compile_declaration(const char *src, LangP_AstNode *pnode, LangC_Comp
 			}
 		}
 		emitop(dst, LANGV_OP_CALL);
-		emitinteger(dst, nArg);
+		emitinteger(dst, nParam);
 		emitinteger(dst, nVar);
 		pscCurr->stackSize = sizeB + nVar;
 	} else {
@@ -504,8 +504,8 @@ static int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_Compi
 			return 1;
 		}
 		LangP_AstNode *parglist = pexpr->value.call.pexprlist;
-		int nArg = parglist->value.nodes.length;
-		for (int i = 0; i < nArg; i++) {
+		int nParam = parglist->value.nodes.length;
+		for (int i = 0; i < nParam; i++) {
 			LangP_AstNode *parg;
 			langM_list_get(&parglist->value.nodes, i, &parg);
 			if (compile_expr(src, parg, pcs, dst)) {
@@ -513,7 +513,7 @@ static int compile_assignment(const char *src, LangP_AstNode *pnode, LangC_Compi
 			}
 		}
 		emitop(dst, LANGV_OP_CALL);
-		emitinteger(dst, nArg);
+		emitinteger(dst, nParam);
 		emitinteger(dst, nVar);
 		pscCurr->stackSize = sizeB + nVar;
 	} else {
@@ -866,8 +866,8 @@ static int compile_statement(const char *src, LangP_AstNode *pnode, LangC_Compil
 					return 1;
 				}
 				LangP_AstNode *parglist = pexprFirst->value.call.pexprlist;
-				int nArg = parglist->value.nodes.length;
-				for (int i = 0; i < nArg; i++) {
+				int nParam = parglist->value.nodes.length;
+				for (int i = 0; i < nParam; i++) {
 					LangP_AstNode *parg;
 					langM_list_get(&parglist->value.nodes, i, &parg);
 					if (compile_expr(src, parg, pcs, dst)) {
@@ -875,7 +875,7 @@ static int compile_statement(const char *src, LangP_AstNode *pnode, LangC_Compil
 					}
 				}
 				emitop(dst, LANGV_OP_TAILCALL);
-				emitinteger(dst, nArg);
+				emitinteger(dst, nParam);
 			} else {
 				// Ordinary return
 				for (int i = 0; i < nReturn; i++) {

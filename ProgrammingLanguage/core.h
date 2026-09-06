@@ -21,9 +21,9 @@
 #define LANG_UPVAL_INDIRECT	1
 
 void		lang_closeupvals		(LangState *L, int index);					// [-0, +0]
-void		lang_pushlfunction		(LangState *L, LangChunk chunk, int nParam,
+void		lang_pushlfunction		(LangState *L, LangChunk chunk, int nArg,
 										int nUpval, const char *upvals);		// [-0, +1]
 void		lang_return 			(LangState *L, int nReturn, int frame);		// [-?, +0]
-void		lang_tailcall			(LangState *L, int nArg);					// [-?, +0]
+void		lang_tailcall			(LangState *L, int nParam);					// [-?, +0]
 
 #endif // CORE_H

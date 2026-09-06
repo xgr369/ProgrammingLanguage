@@ -22,15 +22,15 @@ int langV_exec(LangState *L, LangChunk chunk, int baseFrame) {
 			{
 				address++;
 
-				int nArg;
-				memcpy(&nArg, address, sizeof(int));
+				int nParam;
+				memcpy(&nParam, address, sizeof(int));
 				address += sizeof(int);
 
 				int nReturn;
 				memcpy(&nReturn, address, sizeof(int));
 				address += sizeof(int);
 
-				lang_call(L, nArg, nReturn);
+				lang_call(L, nParam, nReturn);
 				break;
 			}
 			case LANGV_OP_CLOSEUPVALS:
@@ -178,15 +178,15 @@ int langV_exec(LangState *L, LangChunk chunk, int baseFrame) {
 				functionChunk.length = chunk.length - pos; // temporary workaround to avoid bugs
 				address += sizeof(int);
 
-				int nParam;
-				memcpy(&nParam, address, sizeof(int));
+				int nArg;
+				memcpy(&nArg, address, sizeof(int));
 				address += sizeof(int);
 
 				int nUpval;
 				memcpy(&nUpval, address, sizeof(int));
 				address += sizeof(int);
 
-				lang_pushlfunction(L, functionChunk, nParam, nUpval, address);
+				lang_pushlfunction(L, functionChunk, nArg, nUpval, address);
 				address += nUpval * (sizeof(char) + sizeof(int));
 			} break;
 			case LANGV_OP_PUSHLSTRING:
@@ -283,11 +283,11 @@ int langV_exec(LangState *L, LangChunk chunk, int baseFrame) {
 			{
 				address++;
 
-				int nArg;
-				memcpy(&nArg, address, sizeof(int));
+				int nParam;
+				memcpy(&nParam, address, sizeof(int));
 				address += sizeof(int);
 
-				lang_tailcall(L, nArg);
+				lang_tailcall(L, nParam);
 				break;
 			}
 			case LANGV_OP_UNARYOP:
@@ -340,9 +340,9 @@ int langV_print(LangChunk chunk) {
 				print_op("call");
 				pc++;
 
-				int nArg;
-				memcpy(&nArg, src + pc, sizeof(int));
-				printf("%-3d", nArg);
+				int nParam;
+				memcpy(&nParam, src + pc, sizeof(int));
+				printf("%-3d", nParam);
 				print_literal(" ");
 				pc += sizeof(int);
 
@@ -592,9 +592,9 @@ int langV_print(LangChunk chunk) {
 				print_op("tailcall");
 				pc++;
 
-				int nArg;
-				memcpy(&nArg, src + pc, sizeof(int));
-				printf("%-3d", nArg);
+				int nParam;
+				memcpy(&nParam, src + pc, sizeof(int));
+				printf("%-3d", nParam);
 				pc += sizeof(int);
 				break;
 			}
