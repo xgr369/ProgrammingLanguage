@@ -1,78 +1,78 @@
 #include "charlist.h"
 #include <string.h>
 
-static int charlist_resize(LangM_CharList *pcv, size_t addLen) {
-	while (pcv->length + addLen > pcv->size)
-		pcv->size = pcv->size ? pcv->size * 2 : 1;
-	void* ptr = realloc(pcv->data, pcv->size);
+static int charlist_resize(LangM_CharList *pcl, size_t addLen) {
+	while (pcl->length + addLen > pcl->size)
+		pcl->size = pcl->size ? pcl->size * 2 : 1;
+	void* ptr = realloc(pcl->data, pcl->size);
 	if (!ptr)
 		return 1;
-	pcv->data = ptr;
+	pcl->data = ptr;
 	return 0;
 }
 
-int langM_charlist_init(LangM_CharList *pcv, size_t size) {
-	if (!pcv)
+int langM_charlist_init(LangM_CharList *pcl, size_t size) {
+	if (!pcl)
 		return 1;
-	pcv->data = malloc(size);
-	if (!pcv->data)
+	pcl->data = malloc(size);
+	if (!pcl->data)
 		return 1;
-	pcv->length = 0;
-	pcv->size = size;
+	pcl->length = 0;
+	pcl->size = size;
 	return 0;
 }
 
-int langM_charlist_free(LangM_CharList *pcv) {
-	if (!pcv || !pcv->data)
+int langM_charlist_free(LangM_CharList *pcl) {
+	if (!pcl || !pcl->data)
 		return 1;
-	free(pcv->data);
-	pcv->data = NULL;
+	free(pcl->data);
+	pcl->data = NULL;
 	return 0;
 }
 
-int langM_charlist_get(LangM_CharList *pcv, size_t index, char *dst) {
-	if (!pcv || !dst || index < 0 || index >= pcv->length)
+int langM_charlist_get(LangM_CharList *pcl, size_t index, char *dst) {
+	if (!pcl || !dst || index < 0 || index >= pcl->length)
 		return 1;
-	memcpy(dst, pcv->data + index, 1);
+	memcpy(dst, pcl->data + index, 1);
 	return 0;
 }
 
-int langM_charlist_pop(LangM_CharList *pcv, char *dst) {
-	if (!pcv || !dst || pcv->length == 0)
+int langM_charlist_pop(LangM_CharList *pcl, char *dst) {
+	if (!pcl || !dst || pcl->length == 0)
 		return 1;
-	memcpy(dst, pcv->data + pcv->length - 1, 1);
-	pcv->length--;
+	memcpy(dst, pcl->data + pcl->length - 1, 1);
+	pcl->length--;
 	return 0;
 }
 
-int langM_charlist_push(LangM_CharList *pcv, char value) {
-	if (!pcv)
+int langM_charlist_push(LangM_CharList *pcl, char value) {
+	if (!pcl)
 		return 1;
-	if (pcv->length >= pcv->size)
-		if (charlist_resize(pcv, 1))
+	if (pcl->length >= pcl->size)
+		if (charlist_resize(pcl, 1))
 			return 1;
-	*(pcv->data + pcv->length) = value;
-	pcv->length++;
+	*(pcl->data + pcl->length) = value;
+	pcl->length++;
 	return 0;
 }
 
-int langM_charlist_pusharray(LangM_CharList *pcv, const char *src, size_t len) {
-	if (!pcv || !src)
+int langM_charlist_pusharray(LangM_CharList *pcl, const char *src, size_t len) {
+	if (!pcl || !src)
 		return 1;
-	if (pcv->length + len > pcv->size)
-		if (charlist_resize(pcv, len))
+	if (pcl->length + len > pcl->size)
+		if (charlist_resize(pcl, len))
 			return 1;
-	memcpy(pcv->data + pcv->length, src, len);
-	pcv->length += len;
+	memcpy(pcl->data + pcl->length, src, len);
+	pcl->length += len;
 	return 0;
 }
 
-int langM_charlist_setarray(LangM_CharList *pcv, size_t index, const char *src, size_t len) {
-	if (!pcv || !src)
+int langM_charlist_setarray(LangM_CharList *pcl, size_t index, const char *src, size_t len) {
+	if (!pcl || !src)
 		return 1;
-	if (index + len > pcv->size)
-		if (charlist_resize(pcv, len))
+	if (index + len > pcl->size)
+		if (charlist_resize(pcl, len))
 			return 1;
-	memcpy(pcv->data + index, src, len);
+	memcpy(pcl->data + index, src, len);
 	return 0;
 }
