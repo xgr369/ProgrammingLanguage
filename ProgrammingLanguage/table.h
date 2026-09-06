@@ -1,5 +1,5 @@
-#ifndef STRING_HASH_TABLE_H
-#define STRING_HASH_TABLE_H
+#ifndef TABLE_H
+#define TABLE_H
 
 #include <stdlib.h>
 
@@ -26,4 +26,4 @@ int langM_table_get(LangM_Table *pt, const char *key, void *dst);
 int langM_table_put(LangM_Table *pt, const char *key, const void *src);
 int langM_table_remove(LangM_Table *pt, const char *key, void *dst);
 
-#endif // STRING_HASH_TABLE_H
+#endif // TABLE_H
