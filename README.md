@@ -7,14 +7,13 @@ Its main features are multiple assignment, if-else statements, while loops, firs
 # Installation
 
 1. Clone this repository.
-2. Compile with a C compiler.
+2. If you use Windows and want a DLL compilation, set the LANG_BUILD_AS_DLL flag.
+3. Compile with a C compiler.
 
 # Features
 ## Variable declaration and assignment
 ```javascript
-var a = 0;
-var b = 1;
-a, b = b, a;
+var a, b, c, d = 0, "string", null;
 ```
 Functions can also return multiple values.
 ```javascript
